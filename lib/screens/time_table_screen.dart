@@ -36,18 +36,21 @@ class _TimeTableScreenState extends State<TimeTableScreen> with SingleTickerProv
         children: _days.map((day) => _DayScheduleView(day: day)).toList(),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddLectureDialog(context),
+        // Add New Lecture
+        onPressed: () => _showLectureDialog(context, null),
         child: const Icon(Icons.add),
       ),
     );
   }
 
-  void _showAddLectureDialog(BuildContext context) {
+  // Unified function to show dialog for ADD or EDIT
+  void _showLectureDialog(BuildContext context, Map<String, dynamic>? existingLecture) {
     showDialog(
       context: context,
-      builder: (context) => AddLectureDialog(
+      builder: (context) => LectureDialog(
         initialDay: _days[_tabController.index],
-        onSave: () => setState(() {}), // Trigger rebuild to refresh list
+        existingLecture: existingLecture, // Pass null for Add, data for Edit
+        onSave: () => setState(() {}), // Refresh UI
       ),
     ).then((_) => setState(() {}));
   }
@@ -82,17 +85,41 @@ class _DayScheduleViewState extends State<_DayScheduleView> {
               margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               child: ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                  child: const Icon(Icons.class_, size: 20),
+                  backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                  child: Icon(Icons.class_, size: 20, color: Theme.of(context).primaryColor),
                 ),
-                title: Text(lecture['subject']),
+                title: Text(lecture['subject'], style: const TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: Text("${lecture['faculty']} (${lecture['timeSlot']})"),
-                trailing: IconButton(
-                  icon: Icon(Icons.delete, color: Theme.of(context).primaryColor),
-                  onPressed: () async {
-                    await DatabaseHelper.instance.deleteLecture(lecture['id']);
-                    setState(() {}); // Refresh list
-                  },
+                
+                // You can still tap the whole card to edit if you want
+                onTap: () {
+                  context.findAncestorStateOfType<_TimeTableScreenState>()
+                      ?._showLectureDialog(context, lecture);
+                },
+
+                // --- CHANGED: Now shows Edit AND Delete icons ---
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min, // Important: Keeps the icons close together
+                  children: [
+                    // 1. Edit Button (Pencil)
+                    IconButton(
+                      icon: const Icon(Icons.edit, color: Colors.grey),
+                      tooltip: 'Edit Lecture',
+                      onPressed: () {
+                        context.findAncestorStateOfType<_TimeTableScreenState>()
+                            ?._showLectureDialog(context, lecture);
+                      },
+                    ),
+                    // 2. Delete Button (Trash)
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.grey),
+                      tooltip: 'Delete Lecture',
+                      onPressed: () async {
+                        await DatabaseHelper.instance.deleteLecture(lecture['id']);
+                        setState(() {}); 
+                      },
+                    ),
+                  ],
                 ),
               ),
             );
@@ -103,45 +130,73 @@ class _DayScheduleViewState extends State<_DayScheduleView> {
   }
 }
 
-// --- ADD DIALOG (Adapted from your code) ---
-class AddLectureDialog extends StatefulWidget {
+// --- UNIFIED DIALOG (Handles both ADD and EDIT) ---
+class LectureDialog extends StatefulWidget {
   final String initialDay;
+  final Map<String, dynamic>? existingLecture; // If null -> Add Mode, Else -> Edit Mode
   final VoidCallback onSave;
 
-  const AddLectureDialog({super.key, required this.initialDay, required this.onSave});
+  const LectureDialog({
+    super.key, 
+    required this.initialDay, 
+    this.existingLecture, 
+    required this.onSave
+  });
 
   @override
-  State<AddLectureDialog> createState() => _AddLectureDialogState();
+  State<LectureDialog> createState() => _LectureDialogState();
 }
 
-class _AddLectureDialogState extends State<AddLectureDialog> {
+class _LectureDialogState extends State<LectureDialog> {
   final _subjectController = TextEditingController();
   final _facultyController = TextEditingController();
+  final _timeController = TextEditingController(); // Changed to Controller for custom input
   String? _selectedDay;
-  String? _selectedTime;
 
   final List<String> _days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-  final List<String> _timeSlots = [
-    '08:00-08:55', '08:55-09:45', 
-    '10:00-10:50', '10:50-11:40', 
-    '12:30-01:20', '01:20-02:10'
-  ];
 
   @override
   void initState() {
     super.initState();
-    _selectedDay = widget.initialDay;
+    
+    if (widget.existingLecture != null) {
+      // --- EDIT MODE: Pre-fill data ---
+      _subjectController.text = widget.existingLecture!['subject'];
+      _facultyController.text = widget.existingLecture!['faculty'];
+      _timeController.text = widget.existingLecture!['timeSlot'];
+      _selectedDay = widget.existingLecture!['day'];
+    } else {
+      // --- ADD MODE: Defaults ---
+      _selectedDay = widget.initialDay;
+    }
   }
 
   Future<void> _save() async {
-    if (_subjectController.text.isEmpty || _selectedTime == null) return;
+    if (_subjectController.text.isEmpty || _timeController.text.isEmpty) return;
 
-    await DatabaseHelper.instance.createLecture({
+    final data = {
       'day': _selectedDay,
-      'timeSlot': _selectedTime,
+      'timeSlot': _timeController.text, // Save custom text
       'subject': _subjectController.text,
       'faculty': _facultyController.text,
-    });
+    };
+
+    if (widget.existingLecture == null) {
+      // CREATE
+      await DatabaseHelper.instance.createLecture(data);
+    } else {
+      // UPDATE (We need to add an update function to DatabaseHelper first, see below)
+      // For now, since update isn't in your helper, we do a trick: Delete & Re-create
+      // Ideally, add an update method to your DB helper. 
+      // Assuming you might not have 'updateLecture', here is the workaround:
+      
+      // Option A: If you added updateLecture(id, map) to helper:
+      // await DatabaseHelper.instance.updateLecture(widget.existingLecture!['id'], data);
+      
+      // Option B: Delete old and Create new (Fastest fix without changing DB helper)
+      await DatabaseHelper.instance.deleteLecture(widget.existingLecture!['id']);
+      await DatabaseHelper.instance.createLecture(data);
+    }
 
     widget.onSave();
     if (mounted) Navigator.pop(context);
@@ -149,8 +204,10 @@ class _AddLectureDialogState extends State<AddLectureDialog> {
 
   @override
   Widget build(BuildContext context) {
+    bool isEdit = widget.existingLecture != null;
+
     return AlertDialog(
-      title: const Text('Add Lecture'),
+      title: Text(isEdit ? 'Edit Lecture' : 'Add Lecture'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -159,11 +216,14 @@ class _AddLectureDialogState extends State<AddLectureDialog> {
               controller: _subjectController,
               decoration: const InputDecoration(labelText: 'Subject Name'),
             ),
+            const SizedBox(height: 10),
             TextField(
               controller: _facultyController,
               decoration: const InputDecoration(labelText: 'Faculty Name'),
             ),
             const SizedBox(height: 10),
+            
+            // --- Day Dropdown ---
             DropdownButtonFormField(
               value: _selectedDay,
               items: _days.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
@@ -171,18 +231,21 @@ class _AddLectureDialogState extends State<AddLectureDialog> {
               decoration: const InputDecoration(labelText: 'Day'),
             ),
             const SizedBox(height: 10),
-            DropdownButtonFormField(
-              value: _selectedTime,
-              items: _timeSlots.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-              onChanged: (val) => setState(() => _selectedTime = val as String?),
-              decoration: const InputDecoration(labelText: 'Time Slot'),
+            
+            // --- Custom Time Input (TextField) ---
+            TextField(
+              controller: _timeController,
+              decoration: const InputDecoration(
+                labelText: 'Time Slot',
+                hintText: 'e.g. 10:30 - 11:30', // Hint for user
+              ),
             ),
           ],
         ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        ElevatedButton(onPressed: _save, child: const Text('Save')),
+        ElevatedButton(onPressed: _save, child: Text(isEdit ? 'Update' : 'Save')),
       ],
     );
   }
