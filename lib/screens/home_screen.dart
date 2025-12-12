@@ -21,35 +21,35 @@ class HomeScreen extends StatelessWidget {
           children: <Widget>[
             _buildButton(
               context, 
-              '1. Setup Departments', 
+              'Setup Departments', 
               const DepartmentSetupScreen(),
               Icons.business,
             ),
             const SizedBox(height: 20),
             _buildButton(
               context, 
-              '2. Add Students', 
+              'Add Students', 
               const StudentInputScreen(),
               Icons.person_add,
             ),
             const SizedBox(height: 20),
             _buildButton(
               context, 
-              '3. View All Data', 
+              'View All Data', 
               const DataViewScreen(),
               Icons.list_alt,
             ),
             const SizedBox(height: 20),
             _buildButton(
               context, 
-              '4. Manage Time Table', 
+              'Manage Time Table', 
               const TimeTableScreen(), // Link to Time Table
               Icons.schedule,
             ),
             const SizedBox(height: 20),
             _buildButton(
               context, 
-              '5. Generate Daily Report', 
+              'Generate Daily Report', 
               const ReportGeneratorScreenV3(), // Link to Report Generator
               Icons.message,
             ),
