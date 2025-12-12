@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
+import '../models/student.dart';
 
 class DataViewScreen extends StatefulWidget {
   const DataViewScreen({super.key});
@@ -23,24 +24,92 @@ class _DataViewScreenState extends State<DataViewScreen> {
     });
   }
 
-  // --- 1. Logic to Delete Single Student ---
+  // --- 1. Logic to Edit Student (NOW CONNECTED) ---
+  Future<void> _editStudent(Map<String, dynamic> studentData) async {
+    final TextEditingController nameController = 
+        TextEditingController(text: studentData['name']);
+    final TextEditingController rollController = 
+        TextEditingController(text: studentData['rollNumber'].toString());
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Student'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: rollController,
+              decoration: const InputDecoration(labelText: 'Roll Number'),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Student Name'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              // 1. Create updated student object
+              final updatedStudent = Student(
+                id: studentData['id'], // Keep the same ID
+                deptId: studentData['deptId'], // Keep the same Department
+                rollNumber: rollController.text,
+                name: nameController.text,
+              );
+
+              try {
+                // 2. Update in Database
+                await DatabaseHelper.instance.updateStudent(updatedStudent);
+                
+                if (mounted) {
+                  Navigator.pop(context); // Close dialog
+                  _refreshData(); // Refresh list
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Student updated successfully!')),
+                  );
+                }
+              } catch (e) {
+                // Handle duplicate roll number error
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Error: Roll Number might already exist in this department.')),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).primaryColor,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- 2. Logic to Delete Single Student ---
   Future<void> _deleteStudent(int studentId, String studentName) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirm Deletion'),
-        content: Text('Are you sure you want to delete the student: $studentName?'),
+        content: Text('Delete student: $studentName?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            // Black text for cancel
             style: TextButton.styleFrom(foregroundColor: Colors.black),
             child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            // Red text for delete
-            style: TextButton.styleFrom(foregroundColor: Theme.of(context).primaryColor),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Delete'),
           ),
         ],
@@ -49,34 +118,24 @@ class _DataViewScreenState extends State<DataViewScreen> {
 
     if (confirmed) {
       await DatabaseHelper.instance.deleteStudent(studentId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$studentName deleted successfully.')),
-        );
-      }
       _refreshData();
     }
   }
 
-  // --- 2. Logic to Delete ALL Data (Added Back) ---
   Future<void> _showDeleteAllDialog() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('WARNING: Delete All Data'),
-        content: const Text(
-            'Are you sure you really want to delete ALL students AND departments? This action cannot be undone.'),
+        title: const Text('WARNING'),
+        content: const Text('Delete ALL data? This cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            style: TextButton.styleFrom(foregroundColor: Colors.black),
-            child: const Text('Cancel'),
+            child: const Text('Cancel', style: TextStyle(color: Colors.black)),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            // Red text for danger
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('DELETE ALL'),
+            child: const Text('DELETE ALL', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -84,50 +143,41 @@ class _DataViewScreenState extends State<DataViewScreen> {
 
     if (confirmed) {
       await DatabaseHelper.instance.deleteAllData();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('All data deleted successfully.')),
-        );
-      }
       _refreshData();
     }
   }
 
-  // --- 3. Grouping Logic ---
   Map<String, List<Map<String, dynamic>>> _groupStudentsByDepartment(List<Map<String, dynamic>> students) {
     final Map<String, List<Map<String, dynamic>>> groupedData = {};
     for (var student in students) {
       final deptName = student['departmentName'] as String;
-      if (!groupedData.containsKey(deptName)) {
-        groupedData[deptName] = [];
-      }
+      if (!groupedData.containsKey(deptName)) groupedData[deptName] = [];
       groupedData[deptName]!.add(student);
     }
     groupedData.values.forEach((list) {
-      list.sort((a, b) => int.parse(a['rollNumber'].toString())
-          .compareTo(int.parse(b['rollNumber'].toString())));
+      try {
+        list.sort((a, b) => int.parse(a['rollNumber'].toString())
+            .compareTo(int.parse(b['rollNumber'].toString())));
+      } catch (e) { /* Ignore non-numeric sort errors */ }
     });
     return groupedData;
   }
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor; // Your Red Color
+    final primaryColor = Theme.of(context).primaryColor;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('View and Manage Data'),
+        title: const Text('Manage Student Data'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _refreshData,
-            tooltip: 'Refresh Data',
           ),
-          // --- 4. The Delete All Button is Added Here ---
           IconButton(
             icon: const Icon(Icons.delete_forever),
             onPressed: _showDeleteAllDialog,
-            tooltip: 'Delete All Data',
           ),
         ],
       ),
@@ -138,9 +188,7 @@ class _DataViewScreenState extends State<DataViewScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(
-              child: Text('No student data found. Please add students first.'),
-            );
+            return const Center(child: Text('No students found. Add some!'));
           }
 
           final students = snapshot.data!;
@@ -157,7 +205,6 @@ class _DataViewScreenState extends State<DataViewScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Department Header
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 8.0),
                     child: Text(
@@ -165,43 +212,45 @@ class _DataViewScreenState extends State<DataViewScreen> {
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
-                        color: primaryColor, // Use Red Theme
+                        color: primaryColor,
                       ),
                     ),
                   ),
-                  // List of Students
                   ...studentsInDept.map((student) {
                     final rollNo = student['rollNumber'].toString();
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       child: ListTile(
                         leading: CircleAvatar(
-                          // Use Red background for avatar
-                          backgroundColor: primaryColor.withOpacity(0.1), 
-                          radius: 28,
-                          child: Padding(
-                            padding: const EdgeInsets.all(4.0),
-                            child: FittedBox(
-                              child: Text(
-                                rollNo,
-                                style: TextStyle(
-                                  color: primaryColor, // Red Text
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                          backgroundColor: primaryColor.withOpacity(0.1),
+                          child: Text(
+                            rollNo,
+                            style: TextStyle(
+                              color: primaryColor,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
-                        title: Text(student['name'], style: const TextStyle(fontWeight: FontWeight.w500)),
+                        title: Text(student['name']),
                         subtitle: Text('Roll No: $rollNo'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.grey),
-                          onPressed: () => _deleteStudent(
-                            student['id'],
-                            student['name'],
-                          ),
+                        
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // --- EDIT BUTTON (NOW WORKING) ---
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.grey),
+                              onPressed: () => _editStudent(student), // Calls the dialog
+                            ),
+                            // --- DELETE BUTTON ---
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.grey),
+                              onPressed: () => _deleteStudent(
+                                student['id'],
+                                student['name'],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     );

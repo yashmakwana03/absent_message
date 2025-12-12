@@ -105,16 +105,15 @@ Future _createDB(Database db, int version) async {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
-
-  // QUERY ALL Students with their Department Name
+  // QUERY ALL Students with Department Name
   Future<List<Map<String, dynamic>>> readAllStudentsWithDeptName() async {
     final db = await instance.database;
-    // SQL JOIN command to link Student and Department tables
-    final result = await db.rawQuery('''
+    return await db.rawQuery('''
       SELECT 
         S.id, 
         S.rollNumber, 
         S.name, 
+        S.deptId,  -- <--- MAKE SURE THIS IS ADDED
         D.name AS departmentName
       FROM 
         Student S
@@ -125,9 +124,16 @@ Future _createDB(Database db, int version) async {
       ORDER BY 
         D.name, S.rollNumber ASC
     ''');
-    
-    // The result is a List of Maps, where each map contains student details + departmentName
-    return result;
+  }
+
+  Future<int> updateStudent(Student student) async {
+    final db = await instance.database;
+    return await db.update(
+      'Student',
+      student.toMap(),
+      where: 'id = ?',
+      whereArgs: [student.id],
+    );
   }
 
   // DELETE Student
@@ -158,6 +164,8 @@ Future _createDB(Database db, int version) async {
     // Convert List<Map> to List<Department>
     return result.map((json) => Department.fromMap(json)).toList();
   }
+
+  
 
   // QUERY Students by Department ID
   Future<List<Student>> readStudentsByDept(int deptId) async {
