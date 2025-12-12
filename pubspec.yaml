@@ -1,0 +1,61 @@
+name: absent_message
+description: "A new Flutter project."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  intl: ^0.19.0
+  url_launcher: ^6.2.0
+  shared_preferences: ^2.2.2
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.3.1
+
+# --- Configuration for App Icon (Must be at root level) ---
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/AbsentMsgLogo.png" # Ensure this filename matches exactly what is in your folder
+  min_sdk_android: 21
+
+
+# --- Configuration for Splash Screen ---
+flutter_native_splash:
+  # 1. Background Colors (Force White in Dark Mode)
+  color: "#ffffff"
+  color_dark: "#ffffff"
+
+  # 2. Main Image for Android < 12 and iOS
+  branding_android: "assets/AbsentMsgLogo.png"
+
+  # 3. Android 12+ Specific Configuration
+  android_12:
+    # Use 'image' to put the logo in the CENTER
+    branding_android: "assets/AbsentMsgLogo.png"
+    
+    # Background of the circle icon itself (Force White)
+    icon_background_color: "#ffffff"
+    icon_background_color_dark: "#ffffff"
+    
+    # Background of the whole screen (Force White)
+    color: "#ffffff" 
+    color_dark: "#ffffff"
+
+flutter:
+  uses-material-design: true
+  
+  # Register the asset so you can use it inside the app code too
+  assets:
+    - assets/AbsentMsgLogo.png
