@@ -5,6 +5,7 @@ import 'data_view_screen.dart';
 import 'time_table_screen.dart';
 //import 'report_generator_screen.dart';
 import 'report_generator_v3.dart';
+import 'about_me_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -14,6 +15,19 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Attendance App Dashboard'),
+        // --- ADD THIS ACTIONS BLOCK ---
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline), // Or use Icons.person
+            tooltip: 'About Developer',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AboutMeScreen()),
+              );
+            },
+          ),
+        ],
       ),
       body: Center(
         child: Column(
