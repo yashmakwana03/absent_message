@@ -63,7 +63,6 @@ class _DayScheduleView extends StatefulWidget {
   @override
   State<_DayScheduleView> createState() => _DayScheduleViewState();
 }
-
 class _DayScheduleViewState extends State<_DayScheduleView> {
   @override
   Widget build(BuildContext context) {
@@ -71,7 +70,11 @@ class _DayScheduleViewState extends State<_DayScheduleView> {
       future: DatabaseHelper.instance.getLecturesByDay(widget.day),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        
         final lectures = snapshot.data!;
+
+        // --- CRASH FIXED: We removed the sort() line ---
+        // The list is now already sorted by ID from the database query above.
 
         if (lectures.isEmpty) {
           return const Center(child: Text("No lectures added for this day."));
@@ -91,29 +94,25 @@ class _DayScheduleViewState extends State<_DayScheduleView> {
                 title: Text(lecture['subject'], style: const TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: Text("${lecture['faculty']} (${lecture['timeSlot']})"),
                 
-                // You can still tap the whole card to edit if you want
+                // Tap to Edit
                 onTap: () {
                   context.findAncestorStateOfType<_TimeTableScreenState>()
                       ?._showLectureDialog(context, lecture);
                 },
 
-                // --- CHANGED: Now shows Edit AND Delete icons ---
+                // Edit and Delete Icons
                 trailing: Row(
-                  mainAxisSize: MainAxisSize.min, // Important: Keeps the icons close together
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    // 1. Edit Button (Pencil)
                     IconButton(
                       icon: const Icon(Icons.edit, color: Colors.grey),
-                      tooltip: 'Edit Lecture',
                       onPressed: () {
                         context.findAncestorStateOfType<_TimeTableScreenState>()
                             ?._showLectureDialog(context, lecture);
                       },
                     ),
-                    // 2. Delete Button (Trash)
                     IconButton(
                       icon: const Icon(Icons.delete, color: Colors.grey),
-                      tooltip: 'Delete Lecture',
                       onPressed: () async {
                         await DatabaseHelper.instance.deleteLecture(lecture['id']);
                         setState(() {}); 
@@ -225,9 +224,9 @@ class _LectureDialogState extends State<LectureDialog> {
             
             // --- Day Dropdown ---
             DropdownButtonFormField(
-              value: _selectedDay,
+              initialValue: _selectedDay,
               items: _days.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
-              onChanged: (val) => setState(() => _selectedDay = val as String?),
+              onChanged: (val) => setState(() => _selectedDay = val),
               decoration: const InputDecoration(labelText: 'Day'),
             ),
             const SizedBox(height: 10),

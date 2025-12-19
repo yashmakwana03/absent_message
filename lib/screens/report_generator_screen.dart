@@ -132,7 +132,7 @@ class _ReportGeneratorScreenState extends State<ReportGeneratorScreen> {
       }
 
       if (hasAbsentees) {
-        report += lectureBlock + "\n" + absenteesBlock + "------------------------\n\n";
+        report += "$lectureBlock\n$absenteesBlock------------------------\n\n";
       }
     }
     return report;

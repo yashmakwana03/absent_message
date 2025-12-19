@@ -6,6 +6,7 @@ import 'time_table_screen.dart';
 //import 'report_generator_screen.dart';
 import 'report_generator_v3.dart';
 import 'about_me_screen.dart';
+import 'attendance_history_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -67,6 +68,13 @@ class HomeScreen extends StatelessWidget {
               const ReportGeneratorScreenV3(), // Link to Report Generator
               Icons.message,
             ),
+            const SizedBox(height: 20),
+            _buildButton(
+              context, 
+              'View History Logs', 
+              const AttendanceHistoryScreen(), 
+              Icons.history_edu
+),
           ],
         ),
       ),

@@ -154,12 +154,12 @@ class _DataViewScreenState extends State<DataViewScreen> {
       if (!groupedData.containsKey(deptName)) groupedData[deptName] = [];
       groupedData[deptName]!.add(student);
     }
-    groupedData.values.forEach((list) {
+    for (var list in groupedData.values) {
       try {
         list.sort((a, b) => int.parse(a['rollNumber'].toString())
             .compareTo(int.parse(b['rollNumber'].toString())));
       } catch (e) { /* Ignore non-numeric sort errors */ }
-    });
+    }
     return groupedData;
   }
 

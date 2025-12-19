@@ -205,7 +205,7 @@ class _StudentInputScreenState extends State<StudentInputScreen> {
         labelText: 'Select Department',
         border: OutlineInputBorder(),
       ),
-      value: _selectedDepartment,
+      initialValue: _selectedDepartment,
       items: _departments.map((dept) {
         return DropdownMenuItem(
           value: dept,
@@ -251,7 +251,9 @@ class _StudentInputScreenState extends State<StudentInputScreen> {
         ),
       ],
     );
+  
   }
+
 
   Widget _buildShortcutInput() {
     return Column(
