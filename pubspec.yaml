@@ -16,7 +16,9 @@ dependencies:
   shared_preferences: ^2.2.2
   cupertino_icons: ^1.0.8
   font_awesome_flutter: ^10.6.0 # Add this for Brand Icons
-
+  share_plus: ^10.0.0  # To export/share the backup file
+  file_picker: ^8.0.0  # To pick the backup file for restore
+  path_provider: ^2.1.2 # To find file paths
 
 dev_dependencies:
   flutter_test:

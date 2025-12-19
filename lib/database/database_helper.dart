@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'package:share_plus/share_plus.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/department.dart';
@@ -229,4 +232,59 @@ class DatabaseHelper {
     final result = await db.query('Student', where: 'deptId = ?', whereArgs: [deptId], orderBy: 'rollNumber ASC');
     return result.map((json) => Student.fromMap(json)).toList();
   }
+
+  // --- BACKUP & RESTORE ---
+
+  // 1. Export Database (Backup)
+  Future<void> exportDatabase() async {
+    final dbPath = await getDatabasesPath();
+    final path = join(dbPath, 'attendance_app.db');
+    final file = File(path);
+
+    if (await file.exists()) {
+      // Share the file (User can save to Google Drive, WhatsApp, or Downloads)
+      await Share.shareXFiles(
+        [XFile(path)],
+        text: 'Attendance Backup ${DateTime.now()}',
+      );
+    }
+  }
+
+  // 2. Import Database (Restore)
+  Future<bool> importDatabase() async {
+    try {
+      // Pick a file
+      FilePickerResult? result = await FilePicker.platform.pickFiles();
+
+      if (result != null) {
+        File sourceFile = File(result.files.single.path!);
+        
+        // Get internal DB path
+        final dbPath = await getDatabasesPath();
+        final path = join(dbPath, 'attendance_app.db');
+
+        // Close the current DB connection before overwriting
+        if (_database != null && _database!.isOpen) {
+          await _database!.close();
+          _database = null; // Reset instance
+        }
+
+        // Overwrite the file
+        await sourceFile.copy(path);
+        
+        // Re-initialize DB to ensure it works
+        _database = await _initDB('attendance_app.db');
+        return true; // Success
+      }
+      return false; // User canceled
+    } catch (e) {
+      print("Restore Error: $e");
+      return false; // Error
+    }
+  }
+
+
+
+
+
 }
