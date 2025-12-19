@@ -233,16 +233,18 @@ class DatabaseHelper {
     return result.map((json) => Student.fromMap(json)).toList();
   }
 
+  // ... inside DatabaseHelper class ...
+// ... inside DatabaseHelper class ...
+
   // --- BACKUP & RESTORE ---
 
-  // 1. Export Database (Backup)
-  Future<void> exportDatabase() async {
+  // Option A: Share Database (WhatsApp, Drive, Email)
+  Future<void> shareDatabase() async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, 'attendance_app.db');
     final file = File(path);
 
     if (await file.exists()) {
-      // Share the file (User can save to Google Drive, WhatsApp, or Downloads)
       await Share.shareXFiles(
         [XFile(path)],
         text: 'Attendance Backup ${DateTime.now()}',
@@ -250,40 +252,56 @@ class DatabaseHelper {
     }
   }
 
-  // 2. Import Database (Restore)
+  // Option B: Save Database Locally (Folder Picker)
+  Future<String?> saveDatabaseLocally() async {
+    final dbPath = await getDatabasesPath();
+    final path = join(dbPath, 'attendance_app.db');
+    final file = File(path);
+
+    if (await file.exists()) {
+      try {
+        // Pick a folder
+        String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
+
+        if (selectedDirectory != null) {
+          final timestamp = DateTime.now().millisecondsSinceEpoch;
+          final fileName = 'attendance_backup_$timestamp.db';
+          final newPath = join(selectedDirectory, fileName);
+
+          await file.copy(newPath);
+          return newPath; // Return path on success
+        }
+      } catch (e) {
+        print("Save Error: $e");
+        return null;
+      }
+    }
+    return null; // User canceled or file missing
+  }
+
+  // Import Database (Restore) - SAME AS BEFORE
   Future<bool> importDatabase() async {
     try {
-      // Pick a file
       FilePickerResult? result = await FilePicker.platform.pickFiles();
-
       if (result != null) {
         File sourceFile = File(result.files.single.path!);
-        
-        // Get internal DB path
         final dbPath = await getDatabasesPath();
         final path = join(dbPath, 'attendance_app.db');
 
-        // Close the current DB connection before overwriting
         if (_database != null && _database!.isOpen) {
           await _database!.close();
-          _database = null; // Reset instance
+          _database = null;
         }
 
-        // Overwrite the file
         await sourceFile.copy(path);
-        
-        // Re-initialize DB to ensure it works
         _database = await _initDB('attendance_app.db');
-        return true; // Success
+        return true;
       }
-      return false; // User canceled
+      return false;
     } catch (e) {
-      print("Restore Error: $e");
-      return false; // Error
+      return false;
     }
   }
-
-
 
 
 

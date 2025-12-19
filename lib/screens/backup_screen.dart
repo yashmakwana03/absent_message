@@ -23,45 +23,76 @@ class BackupScreen extends StatelessWidget {
               const Icon(Icons.settings_backup_restore, size: 80, color: Colors.grey),
               const SizedBox(height: 40),
               
-              // --- BACKUP BUTTON ---
+              // --- BACKUP SECTION ---
+              const Text("Backup Data", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 15),
+
+              // Button 1: SHARE (WhatsApp, Drive, etc.)
               SizedBox(
                 width: double.infinity,
-                height: 55,
+                height: 50,
                 child: ElevatedButton.icon(
                   onPressed: () async {
-                    await DatabaseHelper.instance.exportDatabase();
+                    // Uses the new shareDatabase function
+                    await DatabaseHelper.instance.shareDatabase();
                   },
-                  icon: const Icon(Icons.upload),
-                  label: const Text("Create Backup"),
+                  icon: const Icon(Icons.share),
+                  label: const Text("Share Backup File"),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
+                    backgroundColor: Colors.blue,
                     foregroundColor: Colors.white,
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
-              const Text(
-                "Saves a copy of your data to share or keep safe.",
-                style: TextStyle(color: Colors.grey),
-                textAlign: TextAlign.center,
-              ),
               
-              const SizedBox(height: 40),
+              const SizedBox(height: 10),
 
-              // --- RESTORE BUTTON ---
+              // Button 2: SAVE LOCALLY (Folder Picker)
               SizedBox(
                 width: double.infinity,
-                height: 55,
+                height: 50,
                 child: ElevatedButton.icon(
                   onPressed: () async {
-                    // Confirm before restoring
+                    // Uses the new saveDatabaseLocally function
+                    String? path = await DatabaseHelper.instance.saveDatabaseLocally();
+                    
+                    if (context.mounted && path != null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text("Saved to: $path"),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 4),
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.folder),
+                  label: const Text("Save to Device Folder"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 40),
+              const Divider(),
+              const SizedBox(height: 20),
+
+              // --- RESTORE SECTION ---
+              const Text("Restore Data", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 15),
+
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
                     bool confirm = await showDialog(
                       context: context,
                       builder: (context) => AlertDialog(
                         title: const Text("Restore Data?"),
-                        content: const Text(
-                          "This will OVERWRITE all current data with the backup file. This cannot be undone.",
-                        ),
+                        content: const Text("This will OVERWRITE all current data. Cannot be undone."),
                         actions: [
                           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
                           TextButton(
@@ -77,7 +108,7 @@ class BackupScreen extends StatelessWidget {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(success ? "Data Restored Successfully!" : "Restore Failed or Canceled"),
+                            content: Text(success ? "Restored Successfully!" : "Failed or Canceled"),
                             backgroundColor: success ? Colors.green : Colors.red,
                           ),
                         );
@@ -85,18 +116,12 @@ class BackupScreen extends StatelessWidget {
                     }
                   },
                   icon: const Icon(Icons.download),
-                  label: const Text("Restore Backup"),
+                  label: const Text("Restore from File"),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueGrey,
+                    backgroundColor: Colors.grey[800],
                     foregroundColor: Colors.white,
                   ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                "Select a previously saved .db file to restore.",
-                style: TextStyle(color: Colors.grey),
-                textAlign: TextAlign.center,
               ),
             ],
           ),
