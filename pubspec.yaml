@@ -22,6 +22,9 @@ dependencies:
   path_provider: ^2.1.2 # To find file paths
   # for SELECTIng multiple dates 
   calendar_date_picker2: ^1.1.0
+  # for SHOWCASE TUTORIAL
+  showcaseview: ^3.0.0  # <--- Add this
+  shared_preferences: ^2.2.2 # You already have this
 
 dev_dependencies:
   flutter_test:
@@ -40,25 +43,24 @@ flutter_launcher_icons:
 
 # --- Configuration for Splash Screen ---
 flutter_native_splash:
-  # 1. Background Colors (Force White in Dark Mode)
+  # 1. Background Color for older phones
   color: "#ffffff"
-  color_dark: "#ffffff"
+  color_dark: "#121212" # Keep screen dark for older phones
 
-  # 2. Main Image for Android < 12 and iOS
-  branding_android: "assets/AbsentMsgLogo.png"
+  # 2. Main Logo
+  image: assets/AbsentMsgLogo.png # Use 'image', 'branding' is deprecated for this use
 
-  # 3. Android 12+ Specific Configuration
+  # 3. Android 12+ Configuration
   android_12:
-    # Use 'image' to put the logo in the CENTER
-    branding_android: "assets/AbsentMsgLogo.png"
+    image: assets/AbsentMsgLogo.png
     
-    # Background of the circle icon itself (Force White)
+    # FORCE WHITE BACKGROUND (Even in Dark Mode)
+    # This makes the white box of your logo blend in perfectly
     icon_background_color: "#ffffff"
-    icon_background_color_dark: "#ffffff"
-    
-    # Background of the whole screen (Force White)
-    color: "#ffffff" 
-    color_dark: "#ffffff"
+    icon_background_color_dark: "#ffffff" 
+
+  android: true
+  ios: true
 
 flutter:
   uses-material-design: true

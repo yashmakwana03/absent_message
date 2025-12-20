@@ -303,7 +303,7 @@ document.addEventListener('DOMContentLoaded', () => {
             child: Column(
               children: [
                 DropdownButtonFormField<String>(
-                  value: _selectedSubject,
+                  initialValue: _selectedSubject,
                   decoration: const InputDecoration(
                     labelText: "Select Subject",
                     border: OutlineInputBorder(),

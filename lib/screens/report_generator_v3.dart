@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../database/database_helper.dart';
 import '../models/department.dart';
 
-// --- 1. Helper Class (No Changes) ---
+// --- HELPER CLASS ---
 class LectureState {
   final int lectureId;
   final String title;
@@ -31,14 +31,15 @@ class LectureState {
 }
 
 class ReportGeneratorScreenV3 extends StatefulWidget {
-  const ReportGeneratorScreenV3({super.key});
+  final DateTime? initialDate;
+  const ReportGeneratorScreenV3({super.key, this.initialDate});
 
   @override
   State<ReportGeneratorScreenV3> createState() => _ReportGeneratorScreenV3State();
 }
 
 class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
-  DateTime _selectedDate = DateTime.now();
+  late DateTime _selectedDate;
   String _dayName = '';
   List<Department> _departments = [];
   List<LectureState> _lectureStates = [];
@@ -50,6 +51,7 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
   @override
   void initState() {
     super.initState();
+    _selectedDate = widget.initialDate ?? DateTime.now();
     _initializeData();
   }
 
@@ -59,24 +61,27 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
     super.dispose();
   }
 
-  // --- LOGIC METHODS (Unchanged) ---
   void _triggerAutoSave() {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(seconds: 1), () => _saveDraft(silent: true));
     _generateMessage();
   }
 
-  Future<void> _saveToHistory() async {
+  // --- 💾 DATABASE SAVE (The "Submit" Action) ---
+  Future<void> _submitAttendance() async {
     bool hasData = false;
     String dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
 
     for (var lecture in _lectureStates) {
       for (var dept in _departments) {
+        // Calculate the actual list of absent roll numbers
         List<String> absentees = _calculateAbsentees(
           dept.id!,
           lecture.controllers[dept.id]!.text,
           lecture.isDirectMode[dept.id]!,
         );
+        
+        // Save to Database (Overwrite existing entry for this day/lecture/dept)
         await DatabaseHelper.instance.createAttendanceLog({
           'date': dateStr,
           'lectureId': lecture.lectureId,
@@ -86,9 +91,20 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
         hasData = true;
       }
     }
+
     if (hasData && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Log Saved Successfully!')),
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 10),
+              Text('Attendance Submitted Successfully!'),
+            ],
+          ),
+          backgroundColor: Colors.green[700],
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
   }
@@ -122,9 +138,29 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
       departments: _departments,
     )).toList();
 
-    await _loadDraft();
+    await _loadDraft(); 
+    await _loadExistingDataFromDB(); // Pre-fill if editing
+
     setState(() => _isLoading = false);
     _generateMessage();
+  }
+
+  Future<void> _loadExistingDataFromDB() async {
+    String dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
+    final existingLogs = await DatabaseHelper.instance.getAttendanceLogs(date: dateStr);
+
+    for (var log in existingLogs) {
+      for (var lecture in _lectureStates) {
+        if (lecture.title == log['subject'] && lecture.time == log['timeSlot']) {
+           String deptName = log['deptName'];
+           var dept = _departments.firstWhere((d) => d.name == deptName, orElse: () => Department(name: ''));
+           // Only load from DB if the controller is empty (Drafts take priority)
+           if (dept.id != null && lecture.controllers[dept.id]!.text.isEmpty) {
+             lecture.controllers[dept.id]!.text = log['absentees'];
+           }
+        }
+      }
+    }
   }
 
   Future<void> _saveDraft({bool silent = false}) async {
@@ -150,7 +186,9 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
         String baseKey = "draft_${dateKey}_${lecture.lectureId}_${dept.id}";
         String? savedText = prefs.getString("${baseKey}_text");
         bool? savedMode = prefs.getBool("${baseKey}_mode");
-        if (savedText != null) lecture.controllers[dept.id]!.text = savedText;
+        if (savedText != null && savedText.isNotEmpty) {
+           lecture.controllers[dept.id]!.text = savedText;
+        }
         if (savedMode != null) lecture.isDirectMode[dept.id!] = savedMode;
       }
     }
@@ -177,12 +215,15 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
     return rollList.map((roll) => "$roll - ${nameMap[roll] ?? "Unknown"}").join('\n');
   }
 
+  // --- No Emojis in Text ---
   void _generateMessage() {
     final formattedDate = DateFormat('dd-MM-yyyy').format(_selectedDate);
     final gujaratiDays = { "Monday": "સોમવાર", "Tuesday": "મંગળવાર", "Wednesday": "બુધવાર", "Thursday": "ગુરુવાર", "Friday": "શુક્રવાર", "Saturday": "શનિવાર", "Sunday": "રવિવાર" };
 
     StringBuffer buffer = StringBuffer();
+    // Gujarati Header
     buffer.writeln("આજે $formattedDate (${gujaratiDays[_dayName] ?? _dayName}) ના રોજ ગેરહાજર રહેલા વિદ્યાર્થીઓની યાદી નીચે મુજબ છે");
+    // English Header
     buffer.writeln("Following is the list of students who remained absent today $formattedDate ($_dayName)\n");
 
     if (_lectureStates.isEmpty) buffer.writeln("No lectures scheduled.");
@@ -216,7 +257,6 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
     }
   }
 
-  // --- UI BUILD ---
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -225,7 +265,6 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Daily Report'),
-        // --- FIXED: Calendar is now a prominent Icon Button ---
         actions: [
           IconButton(
             icon: const Icon(Icons.calendar_month),
@@ -250,7 +289,6 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // --- Date Header is now here ---
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -290,7 +328,6 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
                     )),
 
                 const SizedBox(height: 24),
-                
                 Text("Message Preview", style: textTheme.titleSmall),
                 const SizedBox(height: 8),
                 TextField(
@@ -301,16 +338,12 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
                   decoration: InputDecoration(
                     filled: true,
                     fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                     contentPadding: const EdgeInsets.all(16),
                   ),
                 ),
 
                 const SizedBox(height: 24),
-
                 Row(
                   children: [
                     Expanded(
@@ -330,13 +363,23 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
+                
+                // --- SUBMIT BUTTON ---
                 SizedBox(
                   width: double.infinity,
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.save_alt, size: 18),
-                    label: const Text("Save Log to Database"),
-                    onPressed: _saveToHistory,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      // CHANGE THIS LINE:
+                      backgroundColor: Colors.deepPurple, // Was Colors.green[700]
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 4, // Added shadow for better look
+                    ),
+                    icon: const Icon(Icons.check_circle, size: 22),
+                    label: const Text("Submit Attendance", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    onPressed: _submitAttendance,
                   ),
                 ),
                 const SizedBox(height: 40),
@@ -346,7 +389,7 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
   }
 }
 
-// --- LECTURE CARD (Kept same as previous cleanup) ---
+// --- LectureCard UI ---
 class LectureCard extends StatefulWidget {
   final LectureState lecture;
   final List<Department> departments;

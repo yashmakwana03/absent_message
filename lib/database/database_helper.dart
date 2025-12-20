@@ -107,6 +107,38 @@ class DatabaseHelper {
     ''');
   }
 
+  // --- ADD THESE METHODS TO database_helper.dart ---
+
+  // Update an existing department
+  Future<int> updateDepartment(Department department) async {
+    final db = await instance.database;
+    return await db.update(
+      'Department',
+      department.toMap(),
+      where: 'id = ?',
+      whereArgs: [department.id],
+    );
+  }
+
+  // Delete a department (and optionally cascading students)
+  Future<int> deleteDepartment(int id) async {
+    final db = await instance.database;
+    
+    // Optional: Delete students in this department first to keep data clean
+    await db.delete(
+      'Student',
+      where: 'deptId = ?',
+      whereArgs: [id],
+    );
+
+    return await db.delete(
+      'Department',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+
   // --- LOGGING METHODS ---
 
   // 1. Create a Log Entry
@@ -377,7 +409,7 @@ class DatabaseHelper {
     return await db.rawQuery(query, args);
   }
 
-
+  
 
 
 }

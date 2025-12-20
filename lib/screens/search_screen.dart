@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
-import '../models/student_report_models.dart'; // Import the model
+import '../models/student_report_models.dart';
 import 'student_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -15,65 +15,54 @@ class _SearchScreenState extends State<SearchScreen> {
   List<StudentReport> _allReports = [];
   List<StudentReport> _filteredReports = [];
   bool _isLoading = true;
-  String _activeFilter = 'All'; // Filter by Department Name
+  String _activeFilter = 'All'; 
+  bool _sortByDefaulters = false; // NEW: Toggle for sorting
 
   @override
   void initState() {
     super.initState();
     _fetchAndCalculateData();
-    _searchController.addListener(_filterStudents);
   }
 
   Future<void> _fetchAndCalculateData() async {
     setState(() => _isLoading = true);
     try {
-      // 1. Fetch Data
       final students = await DatabaseHelper.instance.readAllStudentsWithDeptName();
-      // Fetch ALL logs (pass no date to get everything)
       final logs = await DatabaseHelper.instance.getAttendanceLogs(); 
 
       List<StudentReport> calculatedReports = [];
 
-      // 2. Loop Students
       for (var student in students) {
         String name = student['name'];
         String roll = student['rollNumber'];
-        int deptId = student['deptId'];
         String deptName = student['departmentName'];
 
         int totalLectures = 0;
         int totalAbsent = 0;
         Map<String, Map<String, int>> subjectStats = {};
 
-        // 3. Loop Logs for this student
-        for (var log in logs) {
-          // Check if this log belongs to the student's department based on log data
-          // Assuming we can match via deptName returned in logs, or we need deptId.
-          // Let's assume log['deptName'] is available from the query join.
-          if (log['deptName'] == deptName) {
-            totalLectures++;
-            String subject = log['subject'];
-            
-            // Check absence
-            String absentees = log['absentees'] ?? "";
-            List<String> absList = absentees.split(',').map((e) => e.trim()).toList();
-            bool isAbsent = absList.contains(roll);
+        // Optimization: Filter logs by department first if possible in SQL, but Dart filter is okay for small apps
+        var deptLogs = logs.where((l) => l['deptName'] == deptName).toList();
 
-            if (isAbsent) totalAbsent++;
+        for (var log in deptLogs) {
+           totalLectures++;
+           String subject = log['subject'];
+           String absentees = log['absentees'] ?? "";
+           List<String> absList = absentees.split(',').map((e) => e.trim()).toList();
+           
+           bool isAbsent = absList.contains(roll);
+           if (isAbsent) totalAbsent++;
 
-            // Update Subject Stats
-            if (!subjectStats.containsKey(subject)) {
-              subjectStats[subject] = {'present': 0, 'absent': 0};
-            }
-            if (isAbsent) {
-              subjectStats[subject]!['absent'] = subjectStats[subject]!['absent']! + 1;
-            } else {
-              subjectStats[subject]!['present'] = subjectStats[subject]!['present']! + 1;
-            }
-          }
+           if (!subjectStats.containsKey(subject)) {
+             subjectStats[subject] = {'present': 0, 'absent': 0};
+           }
+           if (isAbsent) {
+             subjectStats[subject]!['absent'] = subjectStats[subject]!['absent']! + 1;
+           } else {
+             subjectStats[subject]!['present'] = subjectStats[subject]!['present']! + 1;
+           }
         }
 
-        // 4. Calculate Final Stats
         double percentage = totalLectures == 0 ? 100 : ((totalLectures - totalAbsent) / totalLectures) * 100;
         
         List<SubjectAttendance> subRecords = [];
@@ -104,58 +93,112 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  void _filterStudents() {
-    final query = _searchController.text.toLowerCase();
+  void _filterStudents({String? query}) {
+    String searchText = query ?? _searchController.text.toLowerCase();
+    
     setState(() {
       List<StudentReport> results = _allReports;
       
-      // Dept Filter
+      // 1. Dept Filter
       if (_activeFilter != 'All') {
         results = results.where((s) => s.department == _activeFilter).toList();
       }
 
-      // Search Text
-      if (query.isNotEmpty) {
-        results = results.where((s) => s.name.toLowerCase().contains(query) || s.rollNo.contains(query)).toList();
+      // 2. Search Text
+      if (searchText.isNotEmpty) {
+        results = results.where((s) => s.name.toLowerCase().contains(searchText) || s.rollNo.contains(searchText)).toList();
       }
+      
+      // 3. Sort by Defaulters (Low to High)
+      if (_sortByDefaulters) {
+        results.sort((a, b) => a.overallAttendancePercentage.compareTo(b.overallAttendancePercentage));
+      } else {
+        // Default sort by Roll No (using TryParse to handle numeric sorting)
+        results.sort((a, b) {
+           int? r1 = int.tryParse(a.rollNo);
+           int? r2 = int.tryParse(b.rollNo);
+           if(r1 != null && r2 != null) return r1.compareTo(r2);
+           return a.rollNo.compareTo(b.rollNo);
+        });
+      }
+
       _filteredReports = results;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // Extract unique department names for filter chips
-    final departments = ['All', ..._allReports.map((e) => e.department).toSet().toList()];
+    final primaryColor = Colors.deepPurple;
+    final departments = ['All', ..._allReports.map((e) => e.department).toSet()];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
-      appBar: AppBar(title: const Text('Search & Filter')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            TextField(
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        title: const Text('Student Analytics'),
+        backgroundColor: primaryColor,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          // SORT BUTTON
+          IconButton(
+            icon: Icon(_sortByDefaulters ? Icons.sort_by_alpha : Icons.warning_amber_rounded),
+            tooltip: _sortByDefaulters ? "Sort by Roll No" : "Show Defaulters First",
+            onPressed: () {
+              setState(() {
+                _sortByDefaulters = !_sortByDefaulters;
+                _filterStudents();
+              });
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(_sortByDefaulters ? "Showing Low Attendance First" : "Sorted by Roll Number"),
+                duration: const Duration(seconds: 1),
+              ));
+            },
+          )
+        ],
+      ),
+      body: Column(
+        children: [
+          // --- SEARCH HEADER ---
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            color: primaryColor,
+            child: TextField(
               controller: _searchController,
+              onChanged: (val) => _filterStudents(query: val),
+              style: const TextStyle(color: Colors.black),
               decoration: InputDecoration(
-                hintText: 'Search students...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12.0)),
-                filled: true, fillColor: Colors.white,
+                hintText: 'Search by Name or Roll No...',
+                hintStyle: TextStyle(color: Colors.grey[500]),
+                prefixIcon: const Icon(Icons.search, color: Colors.deepPurple),
+                filled: true, 
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
               ),
             ),
-            const SizedBox(height: 16),
-            SingleChildScrollView(
+          ),
+          
+          // --- FILTER CHIPS ---
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: departments.map((dept) {
                   final isSelected = _activeFilter == dept;
                   return Padding(
                     padding: const EdgeInsets.only(right: 8.0),
-                    child: ChoiceChip(
+                    child: FilterChip(
                       label: Text(dept),
                       selected: isSelected,
-                      selectedColor: Theme.of(context).primaryColor,
-                      labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.black),
+                      selectedColor: primaryColor.withOpacity(0.2),
+                      checkmarkColor: primaryColor,
+                      labelStyle: TextStyle(
+                        color: isSelected ? primaryColor : Colors.black87,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal
+                      ),
                       onSelected: (val) {
                         if (val) {
                           setState(() => _activeFilter = dept);
@@ -167,19 +210,30 @@ class _SearchScreenState extends State<SearchScreen> {
                 }).toList(),
               ),
             ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: _isLoading 
-                ? const Center(child: CircularProgressIndicator())
-                : _filteredReports.isEmpty 
-                  ? const Center(child: Text("No students found"))
-                  : ListView.builder(
-                      itemCount: _filteredReports.length,
-                      itemBuilder: (context, index) => StudentResultCard(report: _filteredReports[index]),
+          ),
+
+          // --- RESULTS LIST ---
+          Expanded(
+            child: _isLoading 
+              ? const Center(child: CircularProgressIndicator())
+              : _filteredReports.isEmpty 
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.search_off, size: 60, color: Colors.grey[300]),
+                        const SizedBox(height: 10),
+                        const Text("No students found"),
+                      ],
                     ),
-            ),
-          ],
-        ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _filteredReports.length,
+                    itemBuilder: (context, index) => StudentResultCard(report: _filteredReports[index]),
+                  ),
+          ),
+        ],
       ),
     );
   }
@@ -191,39 +245,79 @@ class StudentResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    bool isLowAttendance = report.overallAttendancePercentage < 75;
+    final primaryColor = Colors.deepPurple;
+
     return Card(
-      elevation: 2, color: Colors.white, margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text(report.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                child: Text(report.department, style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 12)),
-              )
-            ]),
-            const SizedBox(height: 8),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text('Roll: ${report.rollNo}', style: const TextStyle(color: Colors.grey)),
-              Text('${report.overallAttendancePercentage}%', style: TextStyle(fontWeight: FontWeight.bold, color: report.overallAttendancePercentage < 75 ? Colors.red : Colors.green)),
-            ]),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => StudentDetailScreen(student: report)));
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: primaryColor, foregroundColor: Colors.white),
-                child: const Text('View Detailed Report'),
+      elevation: 0, 
+      color: Colors.white, 
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => StudentDetailScreen(student: report)));
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              // 1. Circular Percent Indicator
+              SizedBox(
+                height: 50, width: 50,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CircularProgressIndicator(
+                      value: report.overallAttendancePercentage / 100,
+                      backgroundColor: Colors.grey.shade100,
+                      color: isLowAttendance ? Colors.red : Colors.green,
+                      strokeWidth: 5,
+                    ),
+                    Center(
+                      child: Text(
+                        "${report.overallAttendancePercentage}%",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold, 
+                          fontSize: 12,
+                          color: isLowAttendance ? Colors.red : Colors.green[800]
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            )
-          ],
+              const SizedBox(width: 16),
+              
+              // 2. Details
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(report.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(color: primaryColor.shade50, borderRadius: BorderRadius.circular(4)),
+                          child: Text(report.department, style: TextStyle(color: primaryColor, fontSize: 10, fontWeight: FontWeight.bold)),
+                        ),
+                        const SizedBox(width: 8),
+                        Text("Roll: ${report.rollNo}", style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // 3. Arrow
+              const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+            ],
+          ),
         ),
       ),
     );

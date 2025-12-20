@@ -6,125 +6,225 @@ class BackupScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    // Define Theme Colors
+    final primaryColor = Colors.deepPurple;
+    final secondaryColor = Colors.indigo;
+    final backgroundColor = Colors.deepPurple.shade50;
 
     return Scaffold(
+      backgroundColor: backgroundColor,
       appBar: AppBar(
         title: const Text("Backup & Restore"),
         backgroundColor: primaryColor,
         foregroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
       ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.settings_backup_restore, size: 80, color: Colors.grey),
-              const SizedBox(height: 40),
-              
-              // --- BACKUP SECTION ---
-              const Text("Backup Data", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 15),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // --- HEADER ICON ---
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: primaryColor.withOpacity(0.2),
+                      blurRadius: 15,
+                      offset: const Offset(0, 5),
+                    )
+                  ],
+                ),
+                child: Icon(
+                  Icons.cloud_sync_outlined,
+                  size: 60,
+                  color: primaryColor,
+                ),
+              ),
+            ),
+            const SizedBox(height: 30),
 
-              // Button 1: SHARE (WhatsApp, Drive, etc.)
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
+            // --- BACKUP SECTION ---
+            _buildSectionCard(
+              context,
+              title: "Backup Data",
+              icon: Icons.upload_file,
+              color: secondaryColor,
+              children: [
+                const Text(
+                  "Export your attendance data to keep it safe. You can share it to WhatsApp, Google Drive, or save it locally.",
+                  style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.5),
+                ),
+                const SizedBox(height: 20),
+                
+                // Button 1: Share
+                FilledButton.icon(
                   onPressed: () async {
-                    // Uses the new shareDatabase function
                     await DatabaseHelper.instance.shareDatabase();
                   },
                   icon: const Icon(Icons.share),
                   label: const Text("Share Backup File"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: secondaryColor,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
-              ),
-              
-              const SizedBox(height: 10),
+                const SizedBox(height: 12),
 
-              // Button 2: SAVE LOCALLY (Folder Picker)
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
+                // Button 2: Save Locally
+                OutlinedButton.icon(
                   onPressed: () async {
-                    // Uses the new saveDatabaseLocally function
                     String? path = await DatabaseHelper.instance.saveDatabaseLocally();
-                    
                     if (context.mounted && path != null) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text("Saved to: $path"),
                           backgroundColor: Colors.green,
-                          duration: const Duration(seconds: 4),
+                          behavior: SnackBarBehavior.floating,
                         ),
                       );
                     }
                   },
-                  icon: const Icon(Icons.folder),
+                  icon: const Icon(Icons.folder_open),
                   label: const Text("Save to Device Folder"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: secondaryColor,
+                    side: BorderSide(color: secondaryColor),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
-              ),
+              ],
+            ),
 
-              const SizedBox(height: 40),
-              const Divider(),
-              const SizedBox(height: 20),
+            const SizedBox(height: 20),
 
-              // --- RESTORE SECTION ---
-              const Text("Restore Data", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 15),
+            // --- RESTORE SECTION ---
+            _buildSectionCard(
+              context,
+              title: "Restore Data",
+              icon: Icons.settings_backup_restore,
+              color: Colors.red.shade700, // Red specifically for danger zone
+              isDangerZone: true,
+              children: [
+                const Text(
+                  "Import a backup file to restore your data.\n⚠️ This will completely REPLACE your current data.",
+                  style: TextStyle(color: Colors.black54, fontSize: 13, height: 1.5),
+                ),
+                const SizedBox(height: 20),
 
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    bool confirm = await showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text("Restore Data?"),
-                        content: const Text("This will OVERWRITE all current data. Cannot be undone."),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, true), 
-                            child: const Text("Restore", style: TextStyle(color: Colors.red))
-                          ),
-                        ],
-                      ),
-                    ) ?? false;
-
-                    if (confirm) {
-                      bool success = await DatabaseHelper.instance.importDatabase();
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(success ? "Restored Successfully!" : "Failed or Canceled"),
-                            backgroundColor: success ? Colors.green : Colors.red,
-                          ),
-                        );
-                      }
-                    }
-                  },
+                // Button: Restore
+                FilledButton.icon(
+                  onPressed: () => _handleRestore(context),
                   icon: const Icon(Icons.download),
                   label: const Text("Restore from File"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.grey[800],
-                    foregroundColor: Colors.white,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.red.shade700, // Warning Color
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- HELPER: RESTORE LOGIC ---
+  Future<void> _handleRestore(BuildContext context) async {
+    bool confirm = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Restore Data?"),
+        content: const Text(
+          "This action will DELETE all current data and replace it with the backup file.\n\nAre you sure?",
+          style: TextStyle(color: Colors.black87),
+        ),
+        icon: const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 40),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
           ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text("Yes, Restore"),
+          ),
+        ],
+      ),
+    ) ?? false;
+
+    if (confirm) {
+      bool success = await DatabaseHelper.instance.importDatabase();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success ? "Restored Successfully!" : "Restore Failed or Canceled"),
+            backgroundColor: success ? Colors.green : Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  // --- HELPER: CARD BUILDER ---
+  Widget _buildSectionCard(BuildContext context, {
+    required String title,
+    required IconData icon,
+    required Color color,
+    required List<Widget> children,
+    bool isDangerZone = false,
+  }) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: isDangerZone ? BorderSide(color: Colors.red.shade100, width: 1.5) : BorderSide.none,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: color),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: children,
+            ),
+          ],
         ),
       ),
     );

@@ -7,7 +7,6 @@ import 'student_input_screen.dart';
 import 'data_view_screen.dart';
 import 'time_table_screen.dart';
 import 'report_generator_v3.dart';
-import 'attendance_history_screen.dart';
 import 'backup_screen.dart';
 import 'daily_report_screen.dart';
 import 'search_screen.dart';
@@ -149,8 +148,7 @@ class HomeScreen extends StatelessWidget {
                 _buildGridIcon(context, "Departments", Icons.business, const DepartmentSetupScreen()),
                 _buildGridIcon(context, "Students", Icons.people, const StudentInputScreen()),
                 _buildGridIcon(context, "Time Table", Icons.schedule, const TimeTableScreen()),
-                _buildGridIcon(context, "All Data", Icons.list_alt, const DataViewScreen()),
-                _buildGridIcon(context, "History", Icons.history, const AttendanceHistoryScreen()),
+                _buildGridIcon(context, "Student Registry", Icons.list_alt, const DataViewScreen()),
                 _buildGridIcon(context, "Backup", Icons.settings_backup_restore, const BackupScreen()),
                 _buildGridIcon(context, "Export Reports", Icons.print, const CustomReportScreen()),
               ],
