@@ -1,7 +1,7 @@
 # 📱 Attendance Manager
 
 <div align="center">
-  <a href="[https://github.com/yashmakwana03/absent_message/releases/latest">
+  <a href="https://github.com/yashmakwana03/absent_message/releases/latest">
     <img src="https://img.shields.io/badge/Download_App_Demo-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" height="45" />
   </a>
 </div>
