@@ -303,6 +303,81 @@ class DatabaseHelper {
     }
   }
 
+  // --- CUSTOM REPORT QUERY ---  
+
+  Future<List<Map<String, dynamic>>> getCustomReportLogs(String startDate, String endDate, String? subject) async {
+    final db = await database;
+    
+    // Base query joining Log, Lecture, and Department
+    String query = '''
+      SELECT 
+        Log.date, 
+        Log.absentees, 
+        Lecture.subject, 
+        Lecture.faculty, 
+        Lecture.timeSlot,
+        Department.name as deptName 
+      FROM AttendanceLog as Log
+      JOIN Lecture ON Log.lectureId = Lecture.id
+      JOIN Department ON Log.deptId = Department.id
+      WHERE Log.date BETWEEN ? AND ?
+    ''';
+
+    List<dynamic> args = [startDate, endDate];
+
+    if (subject != null && subject != 'All') {
+      query += ' AND Lecture.subject = ?';
+      args.add(subject);
+    }
+
+    query += ' ORDER BY Log.date DESC'; // Newest first
+
+    return await db.rawQuery(query, args);
+  }
+
+  // Helper to get unique subjects for the dropdown
+  Future<List<String>> getAllSubjects() async {
+    final db = await database;
+    final result = await db.rawQuery('SELECT DISTINCT subject FROM Lecture');
+    return result.map((row) => row['subject'] as String).toList();
+  }
+
+  //handle a list of specific dates 
+  // Inside DatabaseHelper class
+
+  Future<List<Map<String, dynamic>>> getLogsForSpecificDates(List<String> dates, String? subject) async {
+    final db = await database;
+
+    // Create a string of placeholders like "?, ?, ?" based on how many dates are selected
+    String placeholders = List.filled(dates.length, '?').join(',');
+
+    String query = '''
+      SELECT 
+        Log.date, 
+        Log.absentees, 
+        Lecture.subject, 
+        Lecture.faculty, 
+        Lecture.timeSlot,
+        Department.name as deptName 
+      FROM AttendanceLog as Log
+      JOIN Lecture ON Log.lectureId = Lecture.id
+      JOIN Department ON Log.deptId = Department.id
+      WHERE Log.date IN ($placeholders)
+    ''';
+
+    List<dynamic> args = [...dates];
+
+    if (subject != null && subject != 'All') {
+      query += ' AND Lecture.subject = ?';
+      args.add(subject);
+    }
+
+    query += ' ORDER BY Log.date DESC';
+
+    return await db.rawQuery(query, args);
+  }
+
+
 
 
 }

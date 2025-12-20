@@ -1,3 +1,4 @@
+import 'package:absent_message/screens/custom_report_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; 
 
@@ -151,6 +152,7 @@ class HomeScreen extends StatelessWidget {
                 _buildGridIcon(context, "All Data", Icons.list_alt, const DataViewScreen()),
                 _buildGridIcon(context, "History", Icons.history, const AttendanceHistoryScreen()),
                 _buildGridIcon(context, "Backup", Icons.settings_backup_restore, const BackupScreen()),
+                _buildGridIcon(context, "Export Reports", Icons.print, const CustomReportScreen()),
               ],
             ),
             const SizedBox(height: 30),

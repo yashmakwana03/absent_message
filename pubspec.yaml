@@ -20,6 +20,8 @@ dependencies:
   share_plus: ^10.0.0  # To export/share the backup file
   file_picker: ^8.0.0  # To pick the backup file for restore
   path_provider: ^2.1.2 # To find file paths
+  # for SELECTIng multiple dates 
+  calendar_date_picker2: ^1.1.0
 
 dev_dependencies:
   flutter_test:
