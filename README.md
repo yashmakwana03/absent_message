@@ -53,7 +53,6 @@
 * **Database:** SQLite (`sqflite`)
 * **State Management:** Native (`setState`) & MVC Pattern
 * **Key Packages:**
-    * `showcaseview` (User Tutorial)
     * `flutter_native_splash` (Branding)
     * `share_plus` (Exporting Data)
     * `path_provider` (File System Access)
