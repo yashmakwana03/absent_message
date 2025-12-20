@@ -22,9 +22,6 @@ dependencies:
   path_provider: ^2.1.2 # To find file paths
   # for SELECTIng multiple dates 
   calendar_date_picker2: ^1.1.0
-  # for SHOWCASE TUTORIAL
-  showcaseview: ^3.0.0  # <--- Add this
-  shared_preferences: ^2.2.2 # You already have this
 
 dev_dependencies:
   flutter_test:
@@ -48,12 +45,10 @@ flutter_native_splash:
   color_dark: "#121212" # Keep screen dark for older phones
 
   # 2. Main Logo
-  image: assets/AbsentMsgLogo.png # Use 'image', 'branding' is deprecated for this use
+  branding: assets/AbsentMsgLogo.png # Use 'image', 'branding' is deprecated for this use
 
   # 3. Android 12+ Configuration
   android_12:
-    image: assets/AbsentMsgLogo.png
-    
     # FORCE WHITE BACKGROUND (Even in Dark Mode)
     # This makes the white box of your logo blend in perfectly
     icon_background_color: "#ffffff"

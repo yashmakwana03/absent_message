@@ -43,3 +43,13 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Ignore Database files (So you don't upload real student data)
+*.db
+*.sqlite
+*.sqlite3
+
+# Ignore Build files (To save space)
+build/
+.dart_tool/
+.flutter-plugins
