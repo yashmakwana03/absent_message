@@ -103,6 +103,8 @@ class DatabaseHelper {
         absentees TEXT,
         FOREIGN KEY (lectureId) REFERENCES Lecture (id) ON DELETE CASCADE,
         FOREIGN KEY (deptId) REFERENCES Department (id) ON DELETE CASCADE
+        -- This prevents duplicate entries for the same Date + Lecture + Dept
+        UNIQUE(date, lectureId, deptId)
       )
     ''');
   }
@@ -143,9 +145,16 @@ class DatabaseHelper {
 
   // 1. Create a Log Entry
   Future<int> createAttendanceLog(Map<String, dynamic> row) async {
-    final db = await instance.database;
-    return await db.insert('AttendanceLog', row);
-  }
+  Database db = await instance.database;
+  
+  return await db.insert(
+    'attendance_logs', 
+    row, 
+    // This tells SQLite: "If you hit that UNIQUE constraint we set above,
+    // delete the old row and put this new one in its place."
+    conflictAlgorithm: ConflictAlgorithm.replace, 
+  );
+}
 
   // 2. Fetch Logs
   Future<List<Map<String, dynamic>>> getAttendanceLogs({int? lectureId, String? date}) async {
