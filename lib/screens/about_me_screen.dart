@@ -16,7 +16,7 @@ class AboutMeScreen extends StatelessWidget {
   static const String _appName = "Attendance Manager";
   static const String _appDesc = 
       "A smart mobile solution designed to eliminate paper-based attendance. "
-      "It allows faculty to track daily attendance, manage student records, and generate instant reports for analysis.";
+      "Track daily attendance, manage records, and generate instant analytics.";
 
   // --- Links ---
   static const String _email = "yashmakwana2275@gmail.com";
@@ -46,68 +46,77 @@ class AboutMeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Define a professional gradient based on your primary color
     final primaryColor = Theme.of(context).primaryColor;
+    final gradientColors = [primaryColor, primaryColor.withOpacity(0.7)];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA), // Light grey background
+      backgroundColor: const Color(0xFFF8F9FA),
+      extendBodyBehindAppBar: true, // Allows header to go behind AppBar
       appBar: AppBar(
-        title: const Text("About & Credits"),
-        backgroundColor: primaryColor,
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
         elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: SingleChildScrollView(
+        padding: EdgeInsets.zero, // Remove default padding for header
         child: Column(
           children: [
-            // --- HEADER (Profile) ---
-            _buildHeader(context, primaryColor),
+            // --- HEADER ---
+            _buildHeader(context, gradientColors),
             
-            const SizedBox(height: 60),
+            const SizedBox(height: 60), // Space for Profile Pic overlap
 
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // --- DEVELOPER SECTION ---
-                  Center(
-                    child: Column(
-                      children: [
-                        Text(_devName, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                        Text(_devTitle, style: TextStyle(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
+                  // --- IDENTITY ---
+                  Text(_devName, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                  const SizedBox(height: 4),
+                  Text(_devTitle, style: TextStyle(fontSize: 14, color: Colors.grey[700], fontWeight: FontWeight.w500)),
+                  
+                  const SizedBox(height: 24),
                   _buildBioCard(),
 
                   const SizedBox(height: 30),
-                  const Text("The Project", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
-                  const SizedBox(height: 10),
-
-                  // --- PROJECT DETAILS CARD ---
+                  
+                  // --- PROJECT SECTION ---
+                  _buildSectionTitle("The Project"),
                   _buildProjectCard(primaryColor),
 
                   const SizedBox(height: 20),
-                  const Text("Under the Hood", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
-                  const SizedBox(height: 10),
-
-                  // --- TECHNICAL DETAILS (How we did it) ---
+                  _buildSectionTitle("Under the Hood"),
                   _buildTechnicalCard(),
 
                   const SizedBox(height: 30),
                   
-                  // --- TECH STACK CHIPS ---
-                  const Text("Tech Stack", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 10),
+                  // --- TECH STACK (Split for clarity) ---
+                  _buildSectionTitle("Built With (App)"),
                   Wrap(
                     spacing: 8, runSpacing: 8,
+                    alignment: WrapAlignment.center,
                     children: const [
-                      _TechChip(label: "Flutter & Dart"),
-                      _TechChip(label: "SQLite (Local DB)"),
-                      _TechChip(label: "React.js"),
-                      _TechChip(label: "Node.js"),
-                      _TechChip(label: "MongoDB"),
+                      _TechChip(label: "Flutter", color: Colors.blue),
+                      _TechChip(label: "Dart", color: Colors.blue),
+                      _TechChip(label: "SQLite", color: Colors.indigo),
+                      _TechChip(label: "Share Plus", color: Colors.teal),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  Text("My Other Skills", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey[600])),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8, runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      _TechChip(label: "MERN Stack", color: Colors.grey.shade800),
+                      _TechChip(label: "React.js", color: Colors.grey.shade800),
+                      _TechChip(label: "Node.js", color: Colors.grey.shade800),
+                      _TechChip(label: "MongoDB", color: Colors.grey.shade800),
                     ],
                   ),
 
@@ -115,28 +124,32 @@ class AboutMeScreen extends StatelessWidget {
 
                   // --- SOCIAL LINKS ---
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       _SocialButton(icon: FontAwesomeIcons.github, color: Colors.black, onTap: () => _launchUrl(_githubUrl)),
+                      const SizedBox(width: 20),
                       _SocialButton(icon: FontAwesomeIcons.linkedin, color: const Color(0xFF0077B5), onTap: () => _launchUrl(_linkedinUrl)),
+                      const SizedBox(width: 20),
                       _SocialButton(icon: FontAwesomeIcons.instagram, color: const Color(0xFFE4405F), onTap: () => _launchUrl(_instagramUrl)),
+                      const SizedBox(width: 20),
                       _SocialButton(icon: Icons.email, color: const Color(0xFFDB4437), onTap: _launchEmail),
                     ],
                   ),
                   
-                  const SizedBox(height: 40),
-                  Center(
-                    child: Opacity(
-                      opacity: 0.5,
-                      child: Column(
-                        children: const [
-                          Text("Designed with ❤️ at", style: TextStyle(fontSize: 12)),
-                          Text("RK University (Computer Dept)", style: TextStyle(fontWeight: FontWeight.bold)),
-                        ],
-                      ),
+                  const SizedBox(height: 50),
+                  
+                  // --- FOOTER ---
+                  Opacity(
+                    opacity: 0.6,
+                    child: Column(
+                      children: const [
+                        Text("Designed with ❤️ by Yash", style: TextStyle(fontSize: 13)),
+                        SizedBox(height: 4),
+                        Text("RK University (Computer Dept)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        SizedBox(height: 40),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 20),
                 ],
               ),
             ),
@@ -148,30 +161,50 @@ class AboutMeScreen extends StatelessWidget {
 
   // --- WIDGET BUILDERS ---
 
-  Widget _buildHeader(BuildContext context, Color primaryColor) {
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Text(
+        title, 
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.black87),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, List<Color> gradientColors) {
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.center,
       children: [
-        Container(
-          height: 100,
-          decoration: BoxDecoration(
-            color: primaryColor,
-            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(30)),
+        // Curved Background
+        ClipPath(
+          clipper: _HeaderClipper(),
+          child: Container(
+            height: 180,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: gradientColors,
+              ),
+            ),
           ),
         ),
+        // Profile Picture
         Positioned(
-          top: 40,
+          bottom: -50,
           child: Container(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 4),
-              boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 10, offset: const Offset(0, 5))],
+              border: Border.all(color: Colors.white, width: 5),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 15, offset: const Offset(0, 8))],
             ),
             child: const CircleAvatar(
-              radius: 60,
-              backgroundColor: Colors.grey,
-              backgroundImage: AssetImage('assets/profile.jpeg'), // Ensure image exists
+              radius: 65,
+              backgroundColor: Colors.white,
+              // Handles image loading errors gracefully
+              backgroundImage: AssetImage('assets/profile.jpeg'),
+              child:  null, // You can add an Icon(Icons.person) here if image fails logic is added
             ),
           ),
         ),
@@ -180,56 +213,54 @@ class AboutMeScreen extends StatelessWidget {
   }
 
   Widget _buildBioCard() {
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade200)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Text(
-          _devBio,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 14, height: 1.5, color: Colors.black87),
-        ),
-      ),
+    return Text(
+      _devBio,
+      textAlign: TextAlign.center,
+      style: TextStyle(fontSize: 15, height: 1.6, color: Colors.grey[800]),
     );
   }
 
   Widget _buildProjectCard(Color color) {
     return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 4,
+      shadowColor: color.withOpacity(0.3),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Column(
         children: [
           Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              color: color.withOpacity(0.08),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Row(
               children: [
-                // APP LOGO PLACEHOLDER
                 Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-                  child: Icon(Icons.school, color: color, size: 30),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+                  child: Icon(Icons.school_rounded, color: color, size: 32),
                 ),
                 const SizedBox(width: 16),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(_appName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                    const Text("v1.0.0 (Stable)", style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_appName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(color: Colors.green.shade100, borderRadius: BorderRadius.circular(4)),
+                        child: Text("v1.0.0 Stable", style: TextStyle(fontSize: 10, color: Colors.green.shade800, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
                 )
               ],
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(_appDesc, style: TextStyle(color: Colors.grey[700], height: 1.4)),
+            padding: const EdgeInsets.all(20),
+            child: Text(_appDesc, style: TextStyle(color: Colors.grey[700], height: 1.5)),
           ),
         ],
       ),
@@ -239,14 +270,15 @@ class AboutMeScreen extends StatelessWidget {
   Widget _buildTechnicalCard() {
     return Card(
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade300)),
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade200)),
       child: Column(
         children: [
-          _buildTechTile(Icons.storage, "SQLite Database", "Stores students, departments, and logs locally on the device for offline access."),
-          const Divider(height: 1),
-          _buildTechTile(Icons.code, "Flutter Framework", "Built using a modular UI architecture for smooth performance on Android & iOS."),
-          const Divider(height: 1),
-          _buildTechTile(Icons.share, "Smart Export", "Generates HTML/Text reports and shares directly via WhatsApp or Email."),
+          _buildTechTile(Icons.storage_rounded, "SQLite Database", "Offline-first architecture. All data stays on your device."),
+          const Divider(height: 1, indent: 20, endIndent: 20),
+          _buildTechTile(Icons.flutter_dash_rounded, "Flutter UI", "Component-based architecture for smooth performance."),
+          const Divider(height: 1, indent: 20, endIndent: 20),
+          _buildTechTile(Icons.share_rounded, "Smart Export", "Custom logic to generate formatted WhatsApp & HTML reports."),
         ],
       ),
     );
@@ -254,26 +286,53 @@ class AboutMeScreen extends StatelessWidget {
 
   Widget _buildTechTile(IconData icon, String title, String subtitle) {
     return ListTile(
-      leading: Icon(icon, color: Colors.grey[700]),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8)),
+        child: Icon(icon, color: Colors.grey[800], size: 24),
+      ),
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12, height: 1.4)),
     );
   }
+}
+
+// --- Custom Clipper for the Curved Header ---
+class _HeaderClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    Path path = Path();
+    path.lineTo(0, size.height - 50);
+    path.quadraticBezierTo(size.width / 2, size.height, size.width, size.height - 50);
+    path.lineTo(size.width, 0);
+    return path;
+  }
+
+  @override
+  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
 }
 
 // --- Small Components ---
 
 class _TechChip extends StatelessWidget {
   final String label;
-  const _TechChip({required this.label});
+  final Color color;
+  const _TechChip({required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
-    return Chip(
-      label: Text(label, style: const TextStyle(color: Colors.white, fontSize: 11)),
-      backgroundColor: Colors.black87,
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-      visualDensity: VisualDensity.compact,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Text(
+        label, 
+        style: TextStyle(color: color.withOpacity(1.0), fontSize: 12, fontWeight: FontWeight.w600),
+      ),
     );
   }
 }
@@ -293,12 +352,11 @@ class _SocialButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
           color: Colors.white,
-          boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4))],
-          border: Border.all(color: color.withOpacity(0.1), width: 1),
+          shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 10, offset: const Offset(0, 4))],
         ),
-        child: FaIcon(icon, color: color, size: 24),
+        child: FaIcon(icon, color: color, size: 22),
       ),
     );
   }

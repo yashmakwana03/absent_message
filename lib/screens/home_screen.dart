@@ -1,7 +1,7 @@
-import 'package:absent_message/screens/custom_report_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; 
 
+import '../database/database_helper.dart'; 
 import 'department_setup_screen.dart';
 import 'student_input_screen.dart';
 import 'data_view_screen.dart';
@@ -11,131 +11,85 @@ import 'backup_screen.dart';
 import 'daily_report_screen.dart';
 import 'search_screen.dart';
 import 'about_me_screen.dart';
+import 'manage_enrollment_screen.dart';
+import 'custom_report_screen.dart';
+import 'attendance_log_screen.dart'; // ✅ Imported New Screen
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
+  // --- FACTORY RESET LOGIC ---
+  Future<void> _factoryReset(BuildContext context) async {
+    bool confirm = await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("⚠️ FACTORY RESET", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+        content: const Text("This will permanently delete ALL data:\n\n• Students\n• Subjects\n• Attendance Logs\n\nAre you absolutely sure?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true), 
+            child: const Text("DELETE EVERYTHING"),
+          ),
+        ],
+      ),
+    ) ?? false;
+
+    if (confirm) {
+      await DatabaseHelper.instance.deleteAllData(); 
+      final db = await DatabaseHelper.instance.database;
+      // Double check cleanup
+      await db.delete('AttendanceLog');
+      await db.delete('Lecture');
+      await db.delete('SubjectEnrollment');
+      
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("App Reset Successfully. Start Fresh!")));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // --- COLOR THEME: DEEP PURPLE ---
     const primaryColor = Colors.deepPurple; 
     
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5), // Standard Light Grey Background
+      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: const Text('Attendance CR'), 
         backgroundColor: primaryColor,
-        foregroundColor: Colors.white, // White text
-        elevation: 2,
+        foregroundColor: Colors.white,
+        elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline),
-            tooltip: 'About Developer',
+            tooltip: 'About',
             onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AboutMeScreen()),
-              );
+              Navigator.push(context, MaterialPageRoute(builder: (context) => const AboutMeScreen()));
             },
           ),
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // --- HEADER ---
-            _buildHeader(context),
-            const SizedBox(height: 20),
+            // --- 1. HEADER ---
+            _buildHeader(),
+            const SizedBox(height: 24),
 
-            // --- MAIN CARD (Take Attendance) ---
-            Text(
-              "Quick Actions", 
-              style: TextStyle(
-                fontSize: 16, 
-                fontWeight: FontWeight.bold, 
-                color: Colors.grey[800]
-              )
-            ),
-            const SizedBox(height: 10),
-            
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              color: Colors.white,
-              child: InkWell(
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ReportGeneratorScreenV3())),
-                borderRadius: BorderRadius.circular(16),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: primaryColor.shade50, // Very light purple
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.edit_note, size: 32, color: primaryColor),
-                      ),
-                      const SizedBox(width: 20),
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Take Attendance", 
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)
-                          ),
-                          SizedBox(height: 4),
-                          Text("Mark Absent & Share", style: TextStyle(color: Colors.grey)),
-                        ],
-                      ),
-                      const Spacer(),
-                      const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey)
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            
-            const SizedBox(height: 16),
-
-            // --- SECONDARY ROW ---
-            Row(
-              children: [
-                Expanded(
-                  child: _buildSimpleCard(
-                    context, 
-                    title: "Dashboard", 
-                    icon: Icons.dashboard, 
-                    destination: const DailyReportScreen(),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildSimpleCard(
-                    context, 
-                    title: "Search Student", 
-                    icon: Icons.search, 
-                    destination: const SearchScreen(),
-                  ),
-                ),
-              ],
-            ),
-
+            // --- 2. MAIN ACTION (Take Attendance) ---
+            _buildMainActionCard(context),
             const SizedBox(height: 30),
 
-            // --- GRID SECTION ---
-            Text(
-              "Management", 
-              style: TextStyle(
-                fontSize: 16, 
-                fontWeight: FontWeight.bold, 
-                color: Colors.grey[800]
-              )
+            // --- 3. THE MENU GRID ---
+            const Text(
+              "Menu", 
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 16),
 
             GridView.count(
               shrinkWrap: true,
@@ -143,61 +97,86 @@ class HomeScreen extends StatelessWidget {
               crossAxisCount: 3,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              childAspectRatio: 0.9,
+              childAspectRatio: 0.85, 
               children: [
-                _buildGridIcon(context, "Departments", Icons.business, const DepartmentSetupScreen()),
-                _buildGridIcon(context, "Students", Icons.people, const StudentInputScreen()),
-                _buildGridIcon(context, "Time Table", Icons.schedule, const TimeTableScreen()),
-                _buildGridIcon(context, "Student Registry", Icons.list_alt, const DataViewScreen()),
-                _buildGridIcon(context, "Backup", Icons.settings_backup_restore, const BackupScreen()),
-                _buildGridIcon(context, "Export Reports", Icons.print, const CustomReportScreen()),
+                // ROW 1: SETUP (Orange)
+                _buildGridItem(context, "1. Depts", Icons.domain, Colors.orange, destination: const DepartmentSetupScreen()),
+                _buildGridItem(context, "2. Students", Icons.group_add, Colors.orange, destination: const StudentInputScreen()),
+                _buildGridItem(context, "3. Time Table", Icons.calendar_month, Colors.orange, destination: const TimeTableScreen()),
+                
+                // ROW 2: MANAGEMENT (Blue)
+                _buildGridItem(context, "4. Electives", Icons.how_to_reg, Colors.blue, destination: const ManageEnrollmentScreen()),
+                _buildGridItem(context, "Directory", Icons.list_alt, Colors.blue, destination: const DataViewScreen()),
+                _buildGridItem(context, "View Logs", Icons.history_edu, Colors.blue, destination: const AttendanceLogScreen()), // ✅ New Log Screen
+
+                // ROW 3: REPORTS (Teal)
+                _buildGridItem(context, "Analytics", Icons.analytics, Colors.teal, destination: const SearchScreen()),
+                _buildGridItem(context, "Export", Icons.print, Colors.teal, destination: const CustomReportScreen()),
+                _buildGridItem(context, "Backup", Icons.settings_backup_restore, Colors.teal, destination: const BackupScreen()),
+                
+                // ROW 4: DANGER (Red)
+                _buildGridItem(
+                  context, 
+                  "Reset App", 
+                  Icons.delete_forever, 
+                  Colors.red, 
+                  onAction: () => _factoryReset(context) // ✅ Triggers Function
+                ),
               ],
             ),
-            const SizedBox(height: 30),
+            
+            const SizedBox(height: 40),
           ],
         ),
       ),
     );
   }
 
-  // --- WIDGET BUILDERS ---
+  // --- WIDGETS ---
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader() {
     String dateStr = DateFormat('EEEE, d MMMM').format(DateTime.now());
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          "Welcome,",
-          style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.black87),
+          "Dashboard",
+          style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.black87),
         ),
         Text(
           dateStr,
-          style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+          style: TextStyle(fontSize: 15, color: Colors.grey[600], fontWeight: FontWeight.w500),
         ),
       ],
     );
   }
 
-  // Medium Card (White with Deep Purple Icon)
-  Widget _buildSimpleCard(BuildContext context, {required String title, required IconData icon, required Widget destination}) {
+  Widget _buildMainActionCard(BuildContext context) {
     return Card(
-      elevation: 2,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 8,
+      shadowColor: Colors.deepPurple.withOpacity(0.3),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      color: Colors.deepPurple,
       child: InkWell(
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => destination)),
-        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ReportGeneratorScreenV3())),
+        borderRadius: BorderRadius.circular(20),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          padding: const EdgeInsets.all(24),
+          child: Row(
             children: [
-              Icon(icon, size: 28, color: Colors.deepPurple),
-              const SizedBox(height: 8),
-              Text(
-                title, 
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.black87)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), shape: BoxShape.circle),
+                child: const Icon(Icons.edit_note, size: 36, color: Colors.white),
+              ),
+              const SizedBox(width: 20),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Take Attendance", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+                  SizedBox(height: 4),
+                  Text("Mark absent & Share report", style: TextStyle(color: Colors.white70, fontSize: 12)),
+                ],
               ),
             ],
           ),
@@ -206,24 +185,40 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  // Small Grid Item (Square)
-  Widget _buildGridIcon(BuildContext context, String title, IconData icon, Widget destination) {
+  // Updated to handle both Page Navigation (destination) AND Functions (onAction)
+  Widget _buildGridItem(BuildContext context, String title, IconData icon, Color color, {Widget? destination, VoidCallback? onAction}) {
     return Card(
-      elevation: 1,
+      elevation: 0, 
       color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
       child: InkWell(
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => destination)),
-        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          if (onAction != null) {
+            onAction(); // Run function (Factory Reset)
+          } else if (destination != null) {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => destination)); // Go to Page
+          }
+        },
+        borderRadius: BorderRadius.circular(16),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 26, color: Colors.deepPurple), // Deep Purple Icon
-            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 28, color: color),
+            ),
+            const SizedBox(height: 12),
             Text(
               title, 
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.black87),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87),
             ),
           ],
         ),

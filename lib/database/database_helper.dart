@@ -1,8 +1,9 @@
 import 'dart:io';
+import 'package:path/path.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
 import '../models/department.dart';
 import '../models/student.dart';
 
@@ -12,10 +13,9 @@ class DatabaseHelper {
 
   DatabaseHelper._init();
 
-  // Getter to provide the database instance
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('attendance_app.db');
+    _database = await _initDB('attendance_manager_v2.db');
     return _database!;
   }
 
@@ -25,44 +25,14 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2, 
+      version: 2, // Version 2 for schema updates
       onCreate: _createDB,
-      onUpgrade: _onUpgrade,
+      onUpgrade: _upgradeDB,
     );
   }
 
-  // --- UPGRADE LOGIC (For existing users) ---
-  Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      // Ensure Lecture table exists (Renaming TimeTable concept to Lecture)
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS Lecture (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          day TEXT NOT NULL,
-          timeSlot TEXT NOT NULL,
-          subject TEXT NOT NULL,
-          faculty TEXT NOT NULL
-        )
-      ''');
-      
-      // Create AttendanceLog table
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS AttendanceLog (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          date TEXT NOT NULL,
-          lectureId INTEGER NOT NULL,
-          deptId INTEGER NOT NULL,
-          absentees TEXT,
-          FOREIGN KEY (lectureId) REFERENCES Lecture (id) ON DELETE CASCADE,
-          FOREIGN KEY (deptId) REFERENCES Department (id) ON DELETE CASCADE
-        )
-      ''');
-    }
-  }
-
-  // --- DATABASE CREATION (For new installs) ---
-  Future _createDB(Database db, int version) async {
-    // 1. Department Table
+  Future<void> _createDB(Database db, int version) async {
+    // 1. Departments
     await db.execute('''
       CREATE TABLE Department (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,7 +40,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // 2. Student Table
+    // 2. Students
     await db.execute('''
       CREATE TABLE Student (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,260 +52,322 @@ class DatabaseHelper {
       )
     ''');
 
-    // 3. Lecture Table (CHANGED NAME FROM 'TimeTable' TO 'Lecture')
+    // 3. Lectures (Time Table)
     await db.execute('''
       CREATE TABLE Lecture (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         day TEXT NOT NULL,
         timeSlot TEXT NOT NULL,
         subject TEXT NOT NULL,
-        faculty TEXT NOT NULL
+        faculty TEXT NOT NULL,
+        deptId INTEGER NOT NULL,
+        isElective INTEGER DEFAULT 0,
+        sortOrder INTEGER DEFAULT 1, 
+        FOREIGN KEY (deptId) REFERENCES Department (id) ON DELETE CASCADE
       )
     ''');
 
-    // 4. Attendance Log Table
+    // 4. Attendance Logs
     await db.execute('''
       CREATE TABLE AttendanceLog (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT NOT NULL,
         lectureId INTEGER NOT NULL,
         deptId INTEGER NOT NULL,
-        absentees TEXT,
+        absentees TEXT NOT NULL,
+        FOREIGN KEY (lectureId) REFERENCES Lecture (id) ON DELETE CASCADE
+      )
+    ''');
+
+    // 5. Subject Enrollment (For Electives)
+    await db.execute('''
+      CREATE TABLE SubjectEnrollment (
+        lectureId INTEGER NOT NULL,
+        studentId INTEGER NOT NULL,
+        PRIMARY KEY (lectureId, studentId),
         FOREIGN KEY (lectureId) REFERENCES Lecture (id) ON DELETE CASCADE,
-        FOREIGN KEY (deptId) REFERENCES Department (id) ON DELETE CASCADE
-        -- This prevents duplicate entries for the same Date + Lecture + Dept
-        UNIQUE(date, lectureId, deptId)
+        FOREIGN KEY (studentId) REFERENCES Student (id) ON DELETE CASCADE
       )
     ''');
   }
 
-  // --- ADD THESE METHODS TO database_helper.dart ---
+  Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute(
+        'ALTER TABLE Lecture ADD COLUMN isElective INTEGER DEFAULT 0',
+      );
+      await db.execute(
+        'ALTER TABLE Lecture ADD COLUMN sortOrder INTEGER DEFAULT 1',
+      );
 
-  // Update an existing department
-  Future<int> updateDepartment(Department department) async {
-    final db = await instance.database;
-    return await db.update(
-      'Department',
-      department.toMap(),
-      where: 'id = ?',
-      whereArgs: [department.id],
-    );
-  }
-
-  // Delete a department (and optionally cascading students)
-  Future<int> deleteDepartment(int id) async {
-    final db = await instance.database;
-    
-    // Optional: Delete students in this department first to keep data clean
-    await db.delete(
-      'Student',
-      where: 'deptId = ?',
-      whereArgs: [id],
-    );
-
-    return await db.delete(
-      'Department',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-
-  // --- LOGGING METHODS ---
-
-  // 1. Create a Log Entry
-  Future<int> createAttendanceLog(Map<String, dynamic> row) async {
-  Database db = await instance.database;
-  
-  return await db.insert(
-    'attendance_logs', 
-    row, 
-    // This tells SQLite: "If you hit that UNIQUE constraint we set above,
-    // delete the old row and put this new one in its place."
-    conflictAlgorithm: ConflictAlgorithm.replace, 
-  );
-}
-
-  // 2. Fetch Logs
-  Future<List<Map<String, dynamic>>> getAttendanceLogs({int? lectureId, String? date}) async {
-    final db = await instance.database;
-    
-    String whereClause = '';
-    List<dynamic> whereArgs = [];
-
-    if (lectureId != null) {
-      whereClause += 'L.lectureId = ?';
-      whereArgs.add(lectureId);
+      await db.execute('''
+        CREATE TABLE SubjectEnrollment (
+          lectureId INTEGER NOT NULL,
+          studentId INTEGER NOT NULL,
+          PRIMARY KEY (lectureId, studentId),
+          FOREIGN KEY (lectureId) REFERENCES Lecture (id) ON DELETE CASCADE,
+          FOREIGN KEY (studentId) REFERENCES Student (id) ON DELETE CASCADE
+        )
+      ''');
     }
-    if (date != null) {
-      if (whereClause.isNotEmpty) whereClause += ' AND ';
-      whereClause += 'L.date = ?';
-      whereArgs.add(date);
-    }
-
-    String finalQuery = '''
-      SELECT 
-        L.id, 
-        L.date, 
-        L.absentees,
-        Lect.subject, 
-        Lect.faculty, 
-        Lect.timeSlot,
-        D.name as deptName
-      FROM AttendanceLog L
-      INNER JOIN Lecture Lect ON L.lectureId = Lect.id
-      INNER JOIN Department D ON L.deptId = D.id
-      ${whereClause.isNotEmpty ? 'WHERE $whereClause' : ''}
-      ORDER BY L.date DESC, Lect.timeSlot ASC
-    ''';
-
-    return await db.rawQuery(finalQuery, whereArgs);
   }
 
-  // 3. Get distinct subjects
-  Future<List<Map<String, dynamic>>> getDistinctSubjects() async {
-    final db = await instance.database;
-    // Now this works because the table 'Lecture' actually exists
-    return await db.rawQuery('SELECT DISTINCT id, subject FROM Lecture');
-  }
-
-  // --- Lecture CRUD Operations (UPDATED TO USE 'Lecture' TABLE) ---
-
-  Future<int> createLecture(Map<String, dynamic> row) async {
-    final db = await instance.database;
-    // Changed 'TimeTable' to 'Lecture'
-    return await db.insert('Lecture', row); 
-  }
-
-  Future<List<Map<String, dynamic>>> getLecturesByDay(String day) async {
-    final db = await instance.database;
-    return await db.query(
-      'Lecture', // Changed 'TimeTable' to 'Lecture'
-      where: 'day = ?',
-      whereArgs: [day],
-      orderBy: 'id ASC', 
-    );
-  }
-
-  Future<int> deleteLecture(int id) async {
-    final db = await instance.database;
-    // Changed 'TimeTable' to 'Lecture'
-    return await db.delete('Lecture', where: 'id = ?', whereArgs: [id]);
-  }
-
-  // --- Department & Student CRUD Operations (Unchanged) ---
-
-  Future<int> createDepartment(Department department) async {
-    final db = await instance.database;
-    return await db.insert('Department', department.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
-  }
-
-  Future<int> createStudent(Student student) async {
-    final db = await instance.database;
-    return await db.insert('Student', student.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
-  }
-
-  Future<List<Map<String, dynamic>>> readAllStudentsWithDeptName() async {
-    final db = await instance.database;
-    return await db.rawQuery('''
-      SELECT S.id, S.rollNumber, S.name, S.deptId, D.name AS departmentName
-      FROM Student S
-      INNER JOIN Department D ON S.deptId = D.id
-      ORDER BY D.name, S.rollNumber ASC
-    ''');
-  }
-
-  Future<int> updateStudent(Student student) async {
-    final db = await instance.database;
-    return await db.update('Student', student.toMap(), where: 'id = ?', whereArgs: [student.id]);
-  }
-
-  Future<int> deleteStudent(int id) async {
-    final db = await instance.database;
-    return await db.delete('Student', where: 'id = ?', whereArgs: [id]);
-  }
-
-  Future<int> deleteAllData() async {
-    final db = await instance.database;
-    int studentsDeleted = await db.delete('Student');
-    int departmentsDeleted = await db.delete('Department');
-    return studentsDeleted + departmentsDeleted;
+  // --- DEPARTMENT METHODS ---
+  Future<int> createDepartment(Department dept) async {
+    final db = await database;
+    return await db.insert('Department', dept.toMap());
   }
 
   Future<List<Department>> readAllDepartments() async {
-    final db = await instance.database;
+    final db = await database;
     final result = await db.query('Department');
     return result.map((json) => Department.fromMap(json)).toList();
   }
 
+  Future<int> updateDepartment(Department dept) async {
+    final db = await database;
+    return await db.update(
+      'Department',
+      dept.toMap(),
+      where: 'id = ?',
+      whereArgs: [dept.id],
+    );
+  }
+
+  Future<int> deleteDepartment(int id) async {
+    final db = await database;
+    return await db.delete('Department', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // --- STUDENT METHODS ---
+  Future<int> createStudent(Student student) async {
+    final db = await database;
+    return await db.insert('Student', student.toMap());
+  }
+
   Future<List<Student>> readStudentsByDept(int deptId) async {
-    final db = await instance.database;
-    final result = await db.query('Student', where: 'deptId = ?', whereArgs: [deptId], orderBy: 'rollNumber ASC');
+    final db = await database;
+    final result = await db.query(
+      'Student',
+      where: 'deptId = ?',
+      whereArgs: [deptId],
+      orderBy: 'rollNumber ASC',
+    );
     return result.map((json) => Student.fromMap(json)).toList();
   }
 
-  // ... inside DatabaseHelper class ...
-// ... inside DatabaseHelper class ...
+  Future<List<Map<String, dynamic>>> readAllStudentsWithDeptName() async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT s.*, d.name as departmentName 
+      FROM Student s
+      JOIN Department d ON s.deptId = d.id
+      ORDER BY s.deptId, s.rollNumber
+    ''');
+  }
 
-  // --- BACKUP & RESTORE ---
+  Future<int> updateStudent(Student student) async {
+    final db = await database;
+    return await db.update(
+      'Student',
+      student.toMap(),
+      where: 'id = ?',
+      whereArgs: [student.id],
+    );
+  }
 
-  // Option A: Share Database (WhatsApp, Drive, Email)
-  Future<void> shareDatabase() async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'attendance_app.db');
-    final file = File(path);
+  Future<int> deleteStudent(int id) async {
+    final db = await database;
+    return await db.delete('Student', where: 'id = ?', whereArgs: [id]);
+  }
 
-    if (await file.exists()) {
-      await Share.shareXFiles(
-        [XFile(path)],
-        text: 'Attendance Backup ${DateTime.now()}',
+  // --- LECTURE & TIMETABLE METHODS ---
+  Future<int> createLecture(Map<String, dynamic> data) async {
+    final db = await database;
+    return await db.insert('Lecture', data);
+  }
+
+  Future<List<Map<String, dynamic>>> getLecturesByDay(String day) async {
+    final db = await database;
+    // Sort by sortOrder so lectures appear in correct sequence
+    return await db.query(
+      'Lecture',
+      where: 'day = ?',
+      whereArgs: [day],
+      orderBy: 'sortOrder ASC',
+    );
+  }
+
+  Future<int> deleteLecture(int id) async {
+    final db = await database;
+    return await db.delete('Lecture', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // --- ENROLLMENT METHODS (New for V3) ---
+  Future<List<Map<String, dynamic>>> getElectiveLectures() async {
+    final db = await database;
+    return await db.query('Lecture', where: 'isElective = 1');
+  }
+
+  Future<List<int>> getEnrolledStudentIds(int lectureId) async {
+    final db = await database;
+    final result = await db.query(
+      'SubjectEnrollment',
+      columns: ['studentId'],
+      where: 'lectureId = ?',
+      whereArgs: [lectureId],
+    );
+    return result.map((row) => row['studentId'] as int).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getStudentsForSubject(
+    int lectureId,
+    int deptId,
+  ) async {
+    final db = await database;
+    return await db.rawQuery(
+      '''
+      SELECT s.* FROM Student s
+      JOIN SubjectEnrollment se ON s.id = se.studentId
+      WHERE se.lectureId = ? AND s.deptId = ?
+      ORDER BY s.rollNumber
+    ''',
+      [lectureId, deptId],
+    );
+  }
+
+  Future<void> updateBatchEnrollment(
+    int lectureId,
+    List<int> toAdd,
+    List<int> toRemove,
+  ) async {
+    final db = await database;
+    Batch batch = db.batch();
+
+    for (int sid in toAdd) {
+      batch.insert('SubjectEnrollment', {
+        'lectureId': lectureId,
+        'studentId': sid,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    for (int sid in toRemove) {
+      batch.delete(
+        'SubjectEnrollment',
+        where: 'lectureId = ? AND studentId = ?',
+        whereArgs: [lectureId, sid],
       );
     }
+    await batch.commit(noResult: true);
   }
 
-  // Option B: Save Database Locally (Folder Picker)
-  Future<String?> saveDatabaseLocally() async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'attendance_app.db');
-    final file = File(path);
+  // --- ATTENDANCE LOG METHODS ---
+  Future<int> createAttendanceLog(Map<String, dynamic> data) async {
+    final db = await database;
+    // Check if log exists for this specific lecture AND department
+    final existing = await db.query(
+      'AttendanceLog',
+      where: 'date = ? AND lectureId = ? AND deptId = ?',
+      whereArgs: [data['date'], data['lectureId'], data['deptId']],
+    );
 
-    if (await file.exists()) {
-      try {
-        // Pick a folder
-        String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
-
-        if (selectedDirectory != null) {
-          final timestamp = DateTime.now().millisecondsSinceEpoch;
-          final fileName = 'attendance_backup_$timestamp.db';
-          final newPath = join(selectedDirectory, fileName);
-
-          await file.copy(newPath);
-          return newPath; // Return path on success
-        }
-      } catch (e) {
-        print("Save Error: $e");
-        return null;
-      }
+    if (existing.isNotEmpty) {
+      return await db.update(
+        'AttendanceLog',
+        data,
+        where: 'id = ?',
+        whereArgs: [existing.first['id']],
+      );
+    } else {
+      return await db.insert('AttendanceLog', data);
     }
-    return null; // User canceled or file missing
   }
 
-  // Import Database (Restore) - SAME AS BEFORE
+  Future<List<Map<String, dynamic>>> getAttendanceLogs({String? date}) async {
+    final db = await database;
+    String query = '''
+      SELECT l.*, lec.subject, lec.timeSlot, d.name as deptName
+      FROM AttendanceLog l
+      JOIN Lecture lec ON l.lectureId = lec.id
+      JOIN Department d ON l.deptId = d.id
+    ''';
+
+    if (date != null) {
+      query += " WHERE l.date = '$date'";
+    }
+    query += " ORDER BY l.date DESC, lec.timeSlot ASC";
+
+    return await db.rawQuery(query);
+  }
+
+  Future<List<Map<String, dynamic>>> getLogsForSpecificDates(
+    List<String> dates,
+    String subject,
+  ) async {
+    final db = await database;
+    String dateList = dates.map((d) => "'$d'").join(',');
+
+    String sql =
+        '''
+      SELECT log.date, log.absentees, lec.subject, dept.name as deptName 
+      FROM AttendanceLog log
+      JOIN Lecture lec ON log.lectureId = lec.id
+      JOIN Department dept ON log.deptId = dept.id
+      WHERE log.date IN ($dateList)
+    ''';
+
+    if (subject != 'All') {
+      sql += " AND lec.subject = '$subject'";
+    }
+
+    sql += " ORDER BY log.date ASC";
+    return await db.rawQuery(sql);
+  }
+
+  Future<List<String>> getAllSubjects() async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT DISTINCT subject FROM Lecture ORDER BY subject',
+    );
+    return result.map((e) => e['subject'] as String).toList();
+  }
+
+  // --- BACKUP & RESTORE ---
+  Future<void> shareDatabase() async {
+    final dbPath = await getDatabasesPath();
+    final path = join(dbPath, 'attendance_manager_v2.db');
+    await Share.shareXFiles([XFile(path)], text: 'Attendance Backup');
+  }
+
+  Future<String?> saveDatabaseLocally() async {
+    try {
+      final dbPath = await getDatabasesPath();
+      final sourcePath = join(dbPath, 'attendance_manager_v2.db');
+
+      final directory = Directory('/storage/emulated/0/Download');
+      if (!await directory.exists()) return null;
+
+      final destinationPath = join(
+        directory.path,
+        'Attendance_Backup_${DateTime.now().millisecondsSinceEpoch}.db',
+      );
+      await File(sourcePath).copy(destinationPath);
+      return destinationPath;
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<bool> importDatabase() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles();
       if (result != null) {
-        File sourceFile = File(result.files.single.path!);
+        File file = File(result.files.single.path!);
         final dbPath = await getDatabasesPath();
-        final path = join(dbPath, 'attendance_app.db');
+        final path = join(dbPath, 'attendance_manager_v2.db');
 
-        if (_database != null && _database!.isOpen) {
-          await _database!.close();
-          _database = null;
-        }
-
-        await sourceFile.copy(path);
-        _database = await _initDB('attendance_app.db');
+        await _database?.close();
+        await file.copy(path);
+        _database = await _initDB('attendance_manager_v2.db');
         return true;
       }
       return false;
@@ -344,81 +376,12 @@ class DatabaseHelper {
     }
   }
 
-  // --- CUSTOM REPORT QUERY ---  
-
-  Future<List<Map<String, dynamic>>> getCustomReportLogs(String startDate, String endDate, String? subject) async {
+  Future<void> deleteAllData() async {
     final db = await database;
-    
-    // Base query joining Log, Lecture, and Department
-    String query = '''
-      SELECT 
-        Log.date, 
-        Log.absentees, 
-        Lecture.subject, 
-        Lecture.faculty, 
-        Lecture.timeSlot,
-        Department.name as deptName 
-      FROM AttendanceLog as Log
-      JOIN Lecture ON Log.lectureId = Lecture.id
-      JOIN Department ON Log.deptId = Department.id
-      WHERE Log.date BETWEEN ? AND ?
-    ''';
-
-    List<dynamic> args = [startDate, endDate];
-
-    if (subject != null && subject != 'All') {
-      query += ' AND Lecture.subject = ?';
-      args.add(subject);
-    }
-
-    query += ' ORDER BY Log.date DESC'; // Newest first
-
-    return await db.rawQuery(query, args);
+    await db.delete('AttendanceLog');
+    await db.delete('SubjectEnrollment');
+    await db.delete('Lecture');
+    await db.delete('Student');
+    await db.delete('Department');
   }
-
-  // Helper to get unique subjects for the dropdown
-  Future<List<String>> getAllSubjects() async {
-    final db = await database;
-    final result = await db.rawQuery('SELECT DISTINCT subject FROM Lecture');
-    return result.map((row) => row['subject'] as String).toList();
-  }
-
-  //handle a list of specific dates 
-  // Inside DatabaseHelper class
-
-  Future<List<Map<String, dynamic>>> getLogsForSpecificDates(List<String> dates, String? subject) async {
-    final db = await database;
-
-    // Create a string of placeholders like "?, ?, ?" based on how many dates are selected
-    String placeholders = List.filled(dates.length, '?').join(',');
-
-    String query = '''
-      SELECT 
-        Log.date, 
-        Log.absentees, 
-        Lecture.subject, 
-        Lecture.faculty, 
-        Lecture.timeSlot,
-        Department.name as deptName 
-      FROM AttendanceLog as Log
-      JOIN Lecture ON Log.lectureId = Lecture.id
-      JOIN Department ON Log.deptId = Department.id
-      WHERE Log.date IN ($placeholders)
-    ''';
-
-    List<dynamic> args = [...dates];
-
-    if (subject != null && subject != 'All') {
-      query += ' AND Lecture.subject = ?';
-      args.add(subject);
-    }
-
-    query += ' ORDER BY Log.date DESC';
-
-    return await db.rawQuery(query, args);
-  }
-
-  
-
-
 }

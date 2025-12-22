@@ -15,8 +15,8 @@ class _SearchScreenState extends State<SearchScreen> {
   List<StudentReport> _allReports = [];
   List<StudentReport> _filteredReports = [];
   bool _isLoading = true;
-  String _activeFilter = 'All'; 
-  bool _sortByDefaulters = false; // NEW: Toggle for sorting
+  String _activeFilter = 'All';
+  bool _sortByDefaulters = false;
 
   @override
   void initState() {
@@ -27,8 +27,35 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _fetchAndCalculateData() async {
     setState(() => _isLoading = true);
     try {
-      final students = await DatabaseHelper.instance.readAllStudentsWithDeptName();
-      final logs = await DatabaseHelper.instance.getAttendanceLogs(); 
+      final db = await DatabaseHelper.instance.database;
+
+      // 1. Fetch Basic Data
+      final students = await DatabaseHelper.instance
+          .readAllStudentsWithDeptName();
+      final logs = await DatabaseHelper.instance.getAttendanceLogs();
+
+      // 2. Fetch Logic Data (Lecture Definitions & Enrollments)
+      final lectureRows = await db.query('Lecture');
+      final enrollmentRows = await db.query('SubjectEnrollment');
+
+      // 3. Create SMART Maps (The Fix)
+      // Map: "Subject_Time" -> Lecture ID
+      Map<String, int> lectureUniqueMap = {};
+      Map<int, bool> idToElectiveMap = {};
+
+      for (var row in lectureRows) {
+        String uniqueKey = "${row['subject']}_${row['timeSlot']}";
+        int id = row['id'] as int;
+        bool isElective = (row['isElective'] as int) == 1;
+
+        lectureUniqueMap[uniqueKey] = id;
+        idToElectiveMap[id] = isElective;
+      }
+
+      // Enrollment Set: "LectureID_StudentID"
+      Set<String> enrolledKeys = enrollmentRows
+          .map((e) => "${e['lectureId']}_${e['studentId']}")
+          .toSet();
 
       List<StudentReport> calculatedReports = [];
 
@@ -36,48 +63,83 @@ class _SearchScreenState extends State<SearchScreen> {
         String name = student['name'];
         String roll = student['rollNumber'];
         String deptName = student['departmentName'];
+        int studentId = student['id'];
 
         int totalLectures = 0;
         int totalAbsent = 0;
         Map<String, Map<String, int>> subjectStats = {};
 
-        // Optimization: Filter logs by department first if possible in SQL, but Dart filter is okay for small apps
+        // Filter logs by department (Rough filter first)
         var deptLogs = logs.where((l) => l['deptName'] == deptName).toList();
 
         for (var log in deptLogs) {
-           totalLectures++;
-           String subject = log['subject'];
-           String absentees = log['absentees'] ?? "";
-           List<String> absList = absentees.split(',').map((e) => e.trim()).toList();
-           
-           bool isAbsent = absList.contains(roll);
-           if (isAbsent) totalAbsent++;
+          String subject = log['subject'];
+          String time = log['timeSlot'];
 
-           if (!subjectStats.containsKey(subject)) {
-             subjectStats[subject] = {'present': 0, 'absent': 0};
-           }
-           if (isAbsent) {
-             subjectStats[subject]!['absent'] = subjectStats[subject]!['absent']! + 1;
-           } else {
-             subjectStats[subject]!['present'] = subjectStats[subject]!['present']! + 1;
-           }
+          // --- FIX: Lookup by Name AND Time ---
+          String uniqueKey = "${subject}_${time}";
+          int? lectureId = lectureUniqueMap[uniqueKey];
+          bool isElective =
+              lectureId != null && (idToElectiveMap[lectureId] ?? false);
+
+          if (isElective) {
+            // Check if THIS student is enrolled in THIS SPECIFIC time slot
+            String enrollmentKey = "${lectureId}_$studentId";
+            if (!enrolledKeys.contains(enrollmentKey)) {
+              continue; // SKIP: Student is not in this batch
+            }
+          }
+          // -------------------------------------
+
+          totalLectures++;
+
+          String absentees = log['absentees'] ?? "";
+          List<String> absList = absentees
+              .split(',')
+              .map((e) => e.trim())
+              .toList();
+
+          bool isAbsent = absList.contains(roll);
+          if (isAbsent) totalAbsent++;
+
+          // Consolidate stats by Subject Name
+          if (!subjectStats.containsKey(subject)) {
+            subjectStats[subject] = {'present': 0, 'absent': 0};
+          }
+          if (isAbsent) {
+            subjectStats[subject]!['absent'] =
+                subjectStats[subject]!['absent']! + 1;
+          } else {
+            subjectStats[subject]!['present'] =
+                subjectStats[subject]!['present']! + 1;
+          }
         }
 
-        double percentage = totalLectures == 0 ? 100 : ((totalLectures - totalAbsent) / totalLectures) * 100;
-        
+        double percentage = totalLectures == 0
+            ? 0.0
+            : ((totalLectures - totalAbsent) / totalLectures) * 100;
+
         List<SubjectAttendance> subRecords = [];
         subjectStats.forEach((key, value) {
-          subRecords.add(SubjectAttendance(name: key, present: value['present']!, absent: value['absent']!));
+          subRecords.add(
+            SubjectAttendance(
+              name: key,
+              present: value['present']!,
+              absent: value['absent']!,
+            ),
+          );
         });
 
-        calculatedReports.add(StudentReport(
-          name: name,
-          rollNo: roll,
-          department: deptName,
-          totalAbsentLectures: totalAbsent,
-          overallAttendancePercentage: percentage.round(),
-          subjectRecords: subRecords,
-        ));
+        calculatedReports.add(
+          StudentReport(
+            name: name,
+            rollNo: roll,
+            department: deptName,
+            totalAbsentLectures: totalAbsent,
+            overallAttendancePercentage: percentage.round(),
+            subjectRecords: subRecords,
+          ),
+        );
       }
 
       if (mounted) {
@@ -95,30 +157,37 @@ class _SearchScreenState extends State<SearchScreen> {
 
   void _filterStudents({String? query}) {
     String searchText = query ?? _searchController.text.toLowerCase();
-    
+
     setState(() {
       List<StudentReport> results = _allReports;
-      
-      // 1. Dept Filter
+
       if (_activeFilter != 'All') {
         results = results.where((s) => s.department == _activeFilter).toList();
       }
 
-      // 2. Search Text
       if (searchText.isNotEmpty) {
-        results = results.where((s) => s.name.toLowerCase().contains(searchText) || s.rollNo.contains(searchText)).toList();
+        results = results
+            .where(
+              (s) =>
+                  s.name.toLowerCase().contains(searchText) ||
+                  s.rollNo.contains(searchText),
+            )
+            .toList();
       }
-      
-      // 3. Sort by Defaulters (Low to High)
+
       if (_sortByDefaulters) {
-        results.sort((a, b) => a.overallAttendancePercentage.compareTo(b.overallAttendancePercentage));
+        results.sort(
+          (a, b) => a.overallAttendancePercentage.compareTo(
+            b.overallAttendancePercentage,
+          ),
+        );
       } else {
-        // Default sort by Roll No (using TryParse to handle numeric sorting)
+        // Numeric Sort
         results.sort((a, b) {
-           int? r1 = int.tryParse(a.rollNo);
-           int? r2 = int.tryParse(b.rollNo);
-           if(r1 != null && r2 != null) return r1.compareTo(r2);
-           return a.rollNo.compareTo(b.rollNo);
+          int? r1 = int.tryParse(a.rollNo.replaceAll(RegExp(r'[^0-9]'), ''));
+          int? r2 = int.tryParse(b.rollNo.replaceAll(RegExp(r'[^0-9]'), ''));
+          if (r1 != null && r2 != null) return r1.compareTo(r2);
+          return a.rollNo.compareTo(b.rollNo);
         });
       }
 
@@ -129,7 +198,10 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final primaryColor = Colors.deepPurple;
-    final departments = ['All', ..._allReports.map((e) => e.department).toSet()];
+    final departments = [
+      'All',
+      ..._allReports.map((e) => e.department).toSet(),
+    ];
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -139,26 +211,37 @@ class _SearchScreenState extends State<SearchScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          // SORT BUTTON
           IconButton(
-            icon: Icon(_sortByDefaulters ? Icons.sort_by_alpha : Icons.warning_amber_rounded),
-            tooltip: _sortByDefaulters ? "Sort by Roll No" : "Show Defaulters First",
+            icon: Icon(
+              _sortByDefaulters
+                  ? Icons.sort_by_alpha
+                  : Icons.warning_amber_rounded,
+            ),
+            tooltip: _sortByDefaulters
+                ? "Sort by Roll No"
+                : "Show Defaulters First",
             onPressed: () {
               setState(() {
                 _sortByDefaulters = !_sortByDefaulters;
                 _filterStudents();
               });
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text(_sortByDefaulters ? "Showing Low Attendance First" : "Sorted by Roll Number"),
-                duration: const Duration(seconds: 1),
-              ));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    _sortByDefaulters
+                        ? "Showing Low Attendance First"
+                        : "Sorted by Roll Number",
+                  ),
+                  duration: const Duration(seconds: 1),
+                ),
+              );
             },
-          )
+          ),
         ],
       ),
       body: Column(
         children: [
-          // --- SEARCH HEADER ---
+          // Search Header
           Container(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             color: primaryColor,
@@ -170,15 +253,18 @@ class _SearchScreenState extends State<SearchScreen> {
                 hintText: 'Search by Name or Roll No...',
                 hintStyle: TextStyle(color: Colors.grey[500]),
                 prefixIcon: const Icon(Icons.search, color: Colors.deepPurple),
-                filled: true, 
+                filled: true,
                 fillColor: Colors.white,
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
+                  borderSide: BorderSide.none,
+                ),
               ),
             ),
           ),
-          
-          // --- FILTER CHIPS ---
+
+          // Filter Chips
           Container(
             color: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -197,7 +283,9 @@ class _SearchScreenState extends State<SearchScreen> {
                       checkmarkColor: primaryColor,
                       labelStyle: TextStyle(
                         color: isSelected ? primaryColor : Colors.black87,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
                       onSelected: (val) {
                         if (val) {
@@ -212,16 +300,20 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
 
-          // --- RESULTS LIST ---
+          // Results
           Expanded(
-            child: _isLoading 
-              ? const Center(child: CircularProgressIndicator())
-              : _filteredReports.isEmpty 
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _filteredReports.isEmpty
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.search_off, size: 60, color: Colors.grey[300]),
+                        Icon(
+                          Icons.search_off,
+                          size: 60,
+                          color: Colors.grey[300],
+                        ),
                         const SizedBox(height: 10),
                         const Text("No students found"),
                       ],
@@ -230,7 +322,8 @@ class _SearchScreenState extends State<SearchScreen> {
                 : ListView.builder(
                     padding: const EdgeInsets.all(16),
                     itemCount: _filteredReports.length,
-                    itemBuilder: (context, index) => StudentResultCard(report: _filteredReports[index]),
+                    itemBuilder: (context, index) =>
+                        StudentResultCard(report: _filteredReports[index]),
                   ),
           ),
         ],
@@ -249,8 +342,8 @@ class StudentResultCard extends StatelessWidget {
     final primaryColor = Colors.deepPurple;
 
     return Card(
-      elevation: 0, 
-      color: Colors.white, 
+      elevation: 0,
+      color: Colors.white,
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -259,15 +352,20 @@ class StudentResultCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => StudentDetailScreen(student: report)));
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => StudentDetailScreen(student: report),
+            ),
+          );
         },
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              // 1. Circular Percent Indicator
               SizedBox(
-                height: 50, width: 50,
+                height: 50,
+                width: 50,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -281,9 +379,11 @@ class StudentResultCard extends StatelessWidget {
                       child: Text(
                         "${report.overallAttendancePercentage}%",
                         style: TextStyle(
-                          fontWeight: FontWeight.bold, 
+                          fontWeight: FontWeight.bold,
                           fontSize: 12,
-                          color: isLowAttendance ? Colors.red : Colors.green[800]
+                          color: isLowAttendance
+                              ? Colors.red
+                              : Colors.green[800],
                         ),
                       ),
                     ),
@@ -291,30 +391,53 @@ class StudentResultCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 16),
-              
-              // 2. Details
+
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(report.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text(
+                      report.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: primaryColor.shade50, borderRadius: BorderRadius.circular(4)),
-                          child: Text(report.department, style: TextStyle(color: primaryColor, fontSize: 10, fontWeight: FontWeight.bold)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: primaryColor.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            report.department,
+                            style: TextStyle(
+                              color: primaryColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                         const SizedBox(width: 8),
-                        Text("Roll: ${report.rollNo}", style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                        Text(
+                          "Roll: ${report.rollNo}",
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 13,
+                          ),
+                        ),
                       ],
                     ),
                   ],
                 ),
               ),
 
-              // 3. Arrow
               const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
             ],
           ),

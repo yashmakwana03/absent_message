@@ -83,7 +83,6 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
     _fetchData();
   }
 
-  // --- UPDATED: PROFESSIONAL TEXT GENERATOR (Fixed Variable Error) ---
   Future<void> _shareSummary() async {
     if (_lectureData.isEmpty) return;
     
@@ -92,7 +91,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
     
     // Header
     sb.writeln("*Daily Attendance Report*");
-    sb.writeln("Date: _${dateStr}_\n"); // Fixed: Added brackets {}
+    sb.writeln("Date: $dateStr\n"); 
     
     // Summary Stats
     sb.writeln("*Overview*");
@@ -104,12 +103,11 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
     // Lecture Details
     for (var lecture in _lectureData) {
       sb.writeln("*${lecture.title}*");
+      sb.writeln("Present: ${lecture.presentCount} | Absent: ${lecture.absentCount}");
       
       if (lecture.absentStudents.isEmpty) {
         sb.writeln("_All Present_");
       } else {
-        sb.writeln("Absent: ${lecture.absentCount}");
-        
         // Group by Dept for cleaner list
         Map<String, List<String>> deptMap = {};
         for(var s in lecture.absentStudents) {
@@ -118,7 +116,6 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
         }
         
         deptMap.forEach((dept, rolls) {
-          // e.g. - CE : 1, 5, 12
           sb.writeln("- $dept : ${rolls.join(', ')}");
         });
       }
@@ -128,20 +125,43 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
     await Share.share(sb.toString());
   }
 
+  // --- CORE DATA FETCHING (Fixed for Electives) ---
   Future<void> _fetchData() async {
     setState(() => _isLoading = true);
     try {
+      final db = await DatabaseHelper.instance.database;
+      
+      // 1. Fetch Students
       final allStudents = await DatabaseHelper.instance.readAllStudentsWithDeptName();
       
-      Map<String, String> studentNames = {};
-      Map<int, int> deptStrength = {};
+      // 2. Fetch Elective Info
+      final lectureRows = await db.query('Lecture');
+      final enrollmentRows = await db.query('SubjectEnrollment');
 
+      // Helper Map: "Subject_Time" -> {id, isElective}
+      Map<String, Map<String, dynamic>> lectureInfoMap = {}; 
+      for(var row in lectureRows) {
+        String key = "${row['subject']}_${row['timeSlot']}";
+        lectureInfoMap[key] = {
+            'id': row['id'], 
+            'isElective': (row['isElective'] as int) == 1
+        };
+      }
+      
+      // Helper Set: "LectureID_StudentID" -> Exists
+      Set<String> enrollments = enrollmentRows.map((e) => "${e['lectureId']}_${e['studentId']}").toSet();
+
+      // 3. Prepare Lookups
+      Map<String, String> studentNames = {}; // "DeptId_Roll" -> Name
+      Map<int, int> deptTotalStrength = {}; // DeptId -> Count of all students
+      
       for (var s in allStudents) {
         int dId = s['deptId'];
         studentNames["${dId}_${s['rollNumber']}"] = s['name'];
-        deptStrength[dId] = (deptStrength[dId] ?? 0) + 1;
+        deptTotalStrength[dId] = (deptTotalStrength[dId] ?? 0) + 1;
       }
 
+      // 4. Get Logs for Date
       String dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
       final logs = await DatabaseHelper.instance.getAttendanceLogs(date: dateStr);
 
@@ -151,15 +171,39 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
 
       for (var log in logs) {
         String deptName = log['deptName'];
+        
+        // Find Dept ID from Name
         int deptId = 0;
         var matchingStudent = allStudents.firstWhere((s) => s['departmentName'] == deptName, orElse: () => {});
         if (matchingStudent.isNotEmpty) deptId = matchingStudent['deptId'];
 
-        int totalStrength = deptStrength[deptId] ?? 0;
+        // --- CALCULATE TOTAL STRENGTH (The Fix) ---
+        int totalStrength = 0;
+        
+        String key = "${log['subject']}_${log['timeSlot']}";
+        var info = lectureInfoMap[key];
+        bool isElective = info?['isElective'] ?? false;
+        int lectureId = info?['id'] ?? 0;
+
+        if (!isElective) {
+           // Normal Class: Strength = All students in Dept
+           totalStrength = deptTotalStrength[deptId] ?? 0;
+        } else {
+           // Elective: Strength = Only Enrolled students in Dept
+           var studentsInDept = allStudents.where((s) => s['deptId'] == deptId);
+           for(var s in studentsInDept) {
+              if (enrollments.contains("${lectureId}_${s['id']}")) {
+                totalStrength++;
+              }
+           }
+        }
+        // -------------------------------------------
+
         String absenteesStr = log['absentees'] ?? "";
         List<String> absList = absenteesStr.split(',').where((s) => s.trim().isNotEmpty).toList();
         
         int absentCount = absList.length;
+        // Ensure present count doesn't go negative if data is messy
         int presentCount = (totalStrength - absentCount).clamp(0, totalStrength);
 
         List<AbsentStudentUi> absentUiList = [];
@@ -169,7 +213,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
           absentUiList.add(AbsentStudentUi(rollNo: cleanRoll, name: name, department: deptName));
         }
         
-        try { absentUiList.sort((a, b) => int.parse(a.rollNo).compareTo(int.parse(b.rollNo))); } catch (_) {}
+        try { absentUiList.sort((a, b) => int.parse(a.rollNo.replaceAll(RegExp(r'[^0-9]'), '')).compareTo(int.parse(b.rollNo.replaceAll(RegExp(r'[^0-9]'), '')))); } catch (_) {}
 
         dayTotalStudents += totalStrength;
         dayTotalPresent += presentCount;
@@ -364,10 +408,23 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
             ),
           ),
           title: Text(slot.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          subtitle: Text(
-            "Absent: ${slot.absentCount} / ${slot.totalStrength}",
-            style: TextStyle(color: Colors.grey[600]),
+          
+          // --- UPDATED SUBTITLE: Shows Present & Absent ---
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4.0),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle_outline, size: 14, color: Colors.green[700]),
+                const SizedBox(width: 4),
+                Text("Present: ${slot.presentCount}", style: TextStyle(color: Colors.green[700], fontSize: 13, fontWeight: FontWeight.w500)),
+                const SizedBox(width: 12),
+                Icon(Icons.cancel_outlined, size: 14, color: Colors.red[700]),
+                const SizedBox(width: 4),
+                Text("Absent: ${slot.absentCount}", style: TextStyle(color: Colors.red[700], fontSize: 13, fontWeight: FontWeight.w500)),
+              ],
+            ),
           ),
+          
           children: [
             const Divider(),
             if (slot.absentStudents.isEmpty)

@@ -13,6 +13,12 @@ class LectureState {
   final String title;
   final String faculty;
   final String time;
+  final bool isElective;
+  final int primaryDeptId; // The "Host" Department (Fallback)
+
+  // NEW: Which departments actually have students in this class?
+  final Set<int> relevantDeptIds;
+
   final Map<int, TextEditingController> controllers = {};
   final Map<int, bool> isDirectMode = {};
 
@@ -21,11 +27,15 @@ class LectureState {
     required this.title,
     required this.faculty,
     required this.time,
+    required this.isElective,
+    required this.primaryDeptId,
+    required this.relevantDeptIds,
     required List<Department> departments,
   }) {
-    for (var dept in departments) {
-      controllers[dept.id!] = TextEditingController();
-      isDirectMode[dept.id!] = true; 
+    // Initialize controllers only for relevant departments
+    for (var deptId in relevantDeptIds) {
+      controllers[deptId] = TextEditingController();
+      isDirectMode[deptId] = true;
     }
   }
 }
@@ -35,7 +45,8 @@ class ReportGeneratorScreenV3 extends StatefulWidget {
   const ReportGeneratorScreenV3({super.key, this.initialDate});
 
   @override
-  State<ReportGeneratorScreenV3> createState() => _ReportGeneratorScreenV3State();
+  State<ReportGeneratorScreenV3> createState() =>
+      _ReportGeneratorScreenV3State();
 }
 
 class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
@@ -43,7 +54,10 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
   String _dayName = '';
   List<Department> _departments = [];
   List<LectureState> _lectureStates = [];
+
+  // Cache: DeptID -> List of Student Maps
   final Map<int, List<Map<String, dynamic>>> _studentCache = {};
+
   final TextEditingController _outputController = TextEditingController();
   bool _isLoading = true;
   Timer? _debounce;
@@ -63,29 +77,34 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
 
   void _triggerAutoSave() {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(seconds: 1), () => _saveDraft(silent: true));
+    _debounce = Timer(
+      const Duration(seconds: 1),
+      () => _saveDraft(silent: true),
+    );
     _generateMessage();
   }
 
-  // --- 💾 DATABASE SAVE (The "Submit" Action) ---
   Future<void> _submitAttendance() async {
     bool hasData = false;
     String dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
 
     for (var lecture in _lectureStates) {
-      for (var dept in _departments) {
-        // Calculate the actual list of absent roll numbers
-        List<String> absentees = _calculateAbsentees(
-          dept.id!,
-          lecture.controllers[dept.id]!.text,
-          lecture.isDirectMode[dept.id]!,
+      // Only iterate through RELEVANT departments
+      for (var deptId in lecture.relevantDeptIds) {
+        String input = lecture.controllers[deptId]?.text ?? "";
+        if (input.trim().isEmpty) continue;
+
+        List<String> absentees = await _calculateAbsentees(
+          lecture,
+          deptId,
+          input,
+          lecture.isDirectMode[deptId]!,
         );
-        
-        // Save to Database (Overwrite existing entry for this day/lecture/dept)
+
         await DatabaseHelper.instance.createAttendanceLog({
           'date': dateStr,
           'lectureId': lecture.lectureId,
-          'deptId': dept.id,
+          'deptId': deptId,
           'absentees': absentees.join(','),
         });
         hasData = true;
@@ -99,10 +118,10 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
             children: [
               Icon(Icons.check_circle, color: Colors.white),
               SizedBox(width: 10),
-              Text('Attendance Submitted Successfully!'),
+              Text('Attendance Submitted!'),
             ],
           ),
-          backgroundColor: Colors.green[700],
+          backgroundColor: Colors.deepPurple,
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -112,6 +131,7 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
   Future<void> _initializeData() async {
     setState(() => _isLoading = true);
     _departments = await DatabaseHelper.instance.readAllDepartments();
+
     final db = await DatabaseHelper.instance.database;
     final rawStudents = await db.query('Student');
     _studentCache.clear();
@@ -120,26 +140,66 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
       if (!_studentCache.containsKey(dId)) _studentCache[dId] = [];
       _studentCache[dId]!.add(row);
     }
+
     await _loadLecturesForDate();
   }
 
   Future<void> _loadLecturesForDate() async {
     setState(() => _isLoading = true);
     _dayName = DateFormat('EEEE').format(_selectedDate);
-    List<Map<String, dynamic>> lectures = await DatabaseHelper.instance.getLecturesByDay(_dayName);
-    lectures = List.of(lectures);
-    lectures.sort((a, b) => (a['id'] as int).compareTo(b['id'] as int));
 
-    _lectureStates = lectures.map((l) => LectureState(
-      lectureId: l['id'],
-      title: l['subject'],
-      faculty: l['faculty'],
-      time: l['timeSlot'],
-      departments: _departments,
-    )).toList();
+    List<Map<String, dynamic>> lectures = await DatabaseHelper.instance
+        .getLecturesByDay(_dayName);
+    _lectureStates = [];
 
-    await _loadDraft(); 
-    await _loadExistingDataFromDB(); // Pre-fill if editing
+    for (var l in lectures) {
+      int id = l['id'];
+      bool isElective = l['isElective'] == 1;
+      int primaryDeptId = l['deptId'];
+
+      // --- SMART LOGIC: ENROLLMENT-BASED VISIBILITY ---
+      // We don't care if it's "Elective" or "Core".
+      // We look at the actual enrollment data to decide which boxes to show.
+
+      Set<int> relevantDepts = {};
+
+      // 1. Get all students enrolled in this specific lecture
+      final enrolledIds = await DatabaseHelper.instance.getEnrolledStudentIds(
+        id,
+      );
+      final enrolledSet = enrolledIds.toSet();
+
+      if (enrolledSet.isEmpty) {
+        // FALLBACK: If user hasn't enrolled anyone yet (e.g. new subject),
+        // show the Host Department so the UI isn't empty.
+        relevantDepts.add(primaryDeptId);
+      } else {
+        // 2. Check which departments these enrolled students belong to
+        _studentCache.forEach((deptId, students) {
+          // If ANY student in this dept is in the enrolled list, show this Dept's box
+          if (students.any((s) => enrolledSet.contains(s['id']))) {
+            relevantDepts.add(deptId);
+          }
+        });
+      }
+      // -----------------------------------------------------
+
+      _lectureStates.add(
+        LectureState(
+          lectureId: id,
+          title: l['subject'],
+          faculty: l['faculty'],
+          time: l['timeSlot'],
+          isElective: isElective,
+          primaryDeptId: primaryDeptId,
+          relevantDeptIds: relevantDepts, // Pass the calculated list
+          departments: _departments,
+        ),
+      );
+    }
+
+    await _loadDraft();
+    await _loadExistingDataFromDB();
 
     setState(() => _isLoading = false);
     _generateMessage();
@@ -147,17 +207,24 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
 
   Future<void> _loadExistingDataFromDB() async {
     String dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
-    final existingLogs = await DatabaseHelper.instance.getAttendanceLogs(date: dateStr);
+    final existingLogs = await DatabaseHelper.instance.getAttendanceLogs(
+      date: dateStr,
+    );
 
     for (var log in existingLogs) {
       for (var lecture in _lectureStates) {
-        if (lecture.title == log['subject'] && lecture.time == log['timeSlot']) {
-           String deptName = log['deptName'];
-           var dept = _departments.firstWhere((d) => d.name == deptName, orElse: () => Department(name: ''));
-           // Only load from DB if the controller is empty (Drafts take priority)
-           if (dept.id != null && lecture.controllers[dept.id]!.text.isEmpty) {
-             lecture.controllers[dept.id]!.text = log['absentees'];
-           }
+        // Match by Title and Time
+        if (lecture.title == log['subject'] &&
+            lecture.time == log['timeSlot']) {
+          String deptName = log['deptName'];
+          var dept = _departments.firstWhere(
+            (d) => d.name == deptName,
+            orElse: () => Department(name: ''),
+          );
+
+          if (dept.id != null && lecture.relevantDeptIds.contains(dept.id)) {
+            lecture.controllers[dept.id]!.text = log['absentees'];
+          }
         }
       }
     }
@@ -167,78 +234,164 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
     final prefs = await SharedPreferences.getInstance();
     String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
     for (var lecture in _lectureStates) {
-      for (var dept in _departments) {
-        String baseKey = "draft_${dateKey}_${lecture.lectureId}_${dept.id}";
-        await prefs.setString("${baseKey}_text", lecture.controllers[dept.id]!.text);
-        await prefs.setBool("${baseKey}_mode", lecture.isDirectMode[dept.id]!);
+      for (var deptId in lecture.relevantDeptIds) {
+        String baseKey = "draft_${dateKey}_${lecture.lectureId}_$deptId";
+        await prefs.setString(
+          "${baseKey}_text",
+          lecture.controllers[deptId]!.text,
+        );
+        await prefs.setBool("${baseKey}_mode", lecture.isDirectMode[deptId]!);
       }
     }
-    if (!silent && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Draft saved!')));
-    }
+    if (!silent && mounted)
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Draft saved!')));
   }
 
   Future<void> _loadDraft() async {
     final prefs = await SharedPreferences.getInstance();
     String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
     for (var lecture in _lectureStates) {
-      for (var dept in _departments) {
-        String baseKey = "draft_${dateKey}_${lecture.lectureId}_${dept.id}";
+      for (var deptId in lecture.relevantDeptIds) {
+        String baseKey = "draft_${dateKey}_${lecture.lectureId}_$deptId";
         String? savedText = prefs.getString("${baseKey}_text");
         bool? savedMode = prefs.getBool("${baseKey}_mode");
-        if (savedText != null && savedText.isNotEmpty) {
-           lecture.controllers[dept.id]!.text = savedText;
-        }
-        if (savedMode != null) lecture.isDirectMode[dept.id!] = savedMode;
+        if (savedText != null) lecture.controllers[deptId]!.text = savedText;
+        if (savedMode != null) lecture.isDirectMode[deptId] = savedMode;
       }
     }
   }
 
-  List<String> _calculateAbsentees(int deptId, String input, bool isDirectMode) {
+  Future<List<String>> _calculateAbsentees(
+    LectureState lecture,
+    int deptId,
+    String input,
+    bool isDirectMode,
+  ) async {
     if (input.trim().isEmpty) return [];
-    List<String> inputRolls = input.split(RegExp(r'[, ]+')).map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    if (isDirectMode) return inputRolls;
-    List<String> actualAbsentees = [];
-    final allStudents = _studentCache[deptId] ?? [];
-    for (var s in allStudents) {
-      String roll = s['rollNumber'].toString();
-      if (!inputRolls.contains(roll)) actualAbsentees.add(roll);
+    List<String> inputRolls = input
+        .split(RegExp(r'[, ]+'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    // --- VALIDATION LOGIC ---
+    List<String> validClassList = [];
+
+    // Get Enrollment List (Always check this first)
+    final enrolledIds = await DatabaseHelper.instance.getEnrolledStudentIds(
+      lecture.lectureId,
+    );
+    final enrolledSet = enrolledIds.toSet();
+
+    final allStudentsInDept = _studentCache[deptId] ?? [];
+
+    if (enrolledSet.isEmpty) {
+      // Fallback: If no enrollment set, assume entire department (Safety)
+      validClassList = allStudentsInDept
+          .map((s) => s['rollNumber'].toString())
+          .toList();
+    } else {
+      // Strict Mode: Only students from this Dept who are ALSO enrolled
+      validClassList = allStudentsInDept
+          .where((s) => enrolledSet.contains(s['id']))
+          .map((s) => s['rollNumber'].toString())
+          .toList();
     }
-    return actualAbsentees;
+
+    if (isDirectMode) {
+      // Only return students who are actually in the valid list
+      return inputRolls.where((roll) => validClassList.contains(roll)).toList();
+    } else {
+      // Calculate Absent = Valid List - Present Input
+      List<String> actualAbsentees = [];
+      for (var roll in validClassList) {
+        if (!inputRolls.contains(roll)) actualAbsentees.add(roll);
+      }
+      return actualAbsentees;
+    }
   }
 
   String _formatNames(int deptId, List<String> rollList) {
     if (rollList.isEmpty) return "None";
     final studentsInDept = _studentCache[deptId] ?? [];
-    Map<String, String> nameMap = { for (var s in studentsInDept) s['rollNumber'].toString(): s['name'].toString() };
-    try { rollList.sort((a, b) => int.parse(a).compareTo(int.parse(b))); } catch (e) { /* ignore */ }
-    return rollList.map((roll) => "$roll - ${nameMap[roll] ?? "Unknown"}").join('\n');
+    Map<String, String> nameMap = {
+      for (var s in studentsInDept)
+        s['rollNumber'].toString(): s['name'].toString(),
+    };
+
+    try {
+      rollList.sort((a, b) {
+        return int.parse(
+          a.replaceAll(RegExp(r'[^0-9]'), ''),
+        ).compareTo(int.parse(b.replaceAll(RegExp(r'[^0-9]'), '')));
+      });
+    } catch (e) {
+      /* ignore */
+    }
+
+    return rollList
+        .map((roll) => "$roll - ${nameMap[roll] ?? "Unknown"}")
+        .join('\n');
   }
 
-  // --- No Emojis in Text ---
-  void _generateMessage() {
+  Future<void> _generateMessage() async {
     final formattedDate = DateFormat('dd-MM-yyyy').format(_selectedDate);
-    final gujaratiDays = { "Monday": "સોમવાર", "Tuesday": "મંગળવાર", "Wednesday": "બુધવાર", "Thursday": "ગુરુવાર", "Friday": "શુક્રવાર", "Saturday": "શનિવાર", "Sunday": "રવિવાર" };
+    final gujaratiDays = {
+      "Monday": "સોમવાર",
+      "Tuesday": "મંગળવાર",
+      "Wednesday": "બુધવાર",
+      "Thursday": "ગુરુવાર",
+      "Friday": "શુક્રવાર",
+      "Saturday": "શનિવાર",
+      "Sunday": "રવિવાર",
+    };
 
     StringBuffer buffer = StringBuffer();
-    // Gujarati Header
-    buffer.writeln("આજે $formattedDate (${gujaratiDays[_dayName] ?? _dayName}) ના રોજ ગેરહાજર રહેલા વિદ્યાર્થીઓની યાદી નીચે મુજબ છે");
-    // English Header
-    buffer.writeln("Following is the list of students who remained absent today $formattedDate ($_dayName)\n");
+    buffer.writeln(
+      "આજે $formattedDate (${gujaratiDays[_dayName] ?? _dayName}) ના રોજ ગેરહાજર રહેલા વિદ્યાર્થીઓની યાદી નીચે મુજબ છે",
+    );
+    buffer.writeln(
+      "Following is the list of students who remained absent today $formattedDate ($_dayName)\n",
+    );
 
     if (_lectureStates.isEmpty) buffer.writeln("No lectures scheduled.");
 
     for (var lecture in _lectureStates) {
-      buffer.writeln("*${lecture.title} - ${lecture.faculty} (${lecture.time})*\n");
-      for (var dept in _departments) {
-        List<String> absentees = _calculateAbsentees(dept.id!, lecture.controllers[dept.id]!.text, lecture.isDirectMode[dept.id]!);
+      bool hasAbsenteesForLecture = false;
+      StringBuffer lectureBuffer = StringBuffer();
+
+      lectureBuffer.writeln(
+        "*${lecture.title} - ${lecture.faculty} (${lecture.time})*\n",
+      );
+
+      for (var deptId in lecture.relevantDeptIds) {
+        // Find Dept Name
+        String deptName = _departments.firstWhere((d) => d.id == deptId).name;
+
+        String input = lecture.controllers[deptId]?.text ?? "";
+        if (input.trim().isEmpty) continue;
+
+        List<String> absentees = await _calculateAbsentees(
+          lecture,
+          deptId,
+          input,
+          lecture.isDirectMode[deptId]!,
+        );
+
         if (absentees.isNotEmpty) {
-          buffer.writeln("${dept.name} Absentees :");
-          buffer.writeln(_formatNames(dept.id!, absentees));
-          buffer.writeln();
+          hasAbsenteesForLecture = true;
+          lectureBuffer.writeln("$deptName Absentees :");
+          lectureBuffer.writeln(_formatNames(deptId, absentees));
+          lectureBuffer.writeln();
         }
       }
-      buffer.writeln("------------------------\n");
+      lectureBuffer.writeln("------------------------\n");
+
+      if (hasAbsenteesForLecture) {
+        buffer.write(lectureBuffer.toString());
+      }
     }
     setState(() => _outputController.text = buffer.toString());
   }
@@ -246,14 +399,22 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
   void _copyToClipboard() {
     if (_outputController.text.isEmpty) _generateMessage();
     Clipboard.setData(ClipboardData(text: _outputController.text));
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied to Clipboard!')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Copied to Clipboard!')));
   }
 
   Future<void> _shareToWhatsApp() async {
-    if (_outputController.text.isEmpty) _generateMessage();
-    String urlString = "whatsapp://send?text=${Uri.encodeComponent(_outputController.text)}";
-    try { await launchUrl(Uri.parse(urlString)); } catch (e) {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not launch WhatsApp')));
+    if (_outputController.text.isEmpty) await _generateMessage();
+    String urlString =
+        "whatsapp://send?text=${Uri.encodeComponent(_outputController.text)}";
+    try {
+      await launchUrl(Uri.parse(urlString));
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not launch WhatsApp')),
+        );
     }
   }
 
@@ -268,7 +429,6 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
         actions: [
           IconButton(
             icon: const Icon(Icons.calendar_month),
-            tooltip: "Change Date",
             onPressed: () async {
               final picked = await showDatePicker(
                 context: context,
@@ -294,7 +454,9 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
                   children: [
                     Text(
                       _dayName,
-                      style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                      style: textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     Text(
                       DateFormat('MMMM dd, yyyy').format(_selectedDate),
@@ -309,27 +471,24 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
                 if (_lectureStates.isEmpty)
                   Center(
                     child: Padding(
-                      padding: const EdgeInsets.all(40.0),
-                      child: Column(
-                        children: [
-                          Icon(Icons.event_busy, size: 48, color: colorScheme.outline),
-                          const SizedBox(height: 16),
-                          Text("No lectures found.", style: TextStyle(color: colorScheme.outline)),
-                        ],
+                      padding: const EdgeInsets.all(40),
+                      child: Text(
+                        "No lectures found.",
+                        style: TextStyle(color: colorScheme.outline),
                       ),
                     ),
                   ),
 
-                ..._lectureStates.map((lecture) => LectureCard(
-                      lecture: lecture,
-                      departments: _departments,
-                      studentCache: _studentCache,
-                      onStateChange: _triggerAutoSave,
-                    )),
+                ..._lectureStates.map(
+                  (lecture) => LectureCard(
+                    lecture: lecture,
+                    departments: _departments,
+                    studentCache: _studentCache,
+                    onStateChange: _triggerAutoSave,
+                  ),
+                ),
 
                 const SizedBox(height: 24),
-                Text("Message Preview", style: textTheme.titleSmall),
-                const SizedBox(height: 8),
                 TextField(
                   controller: _outputController,
                   maxLines: 6,
@@ -337,9 +496,13 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
                   decoration: InputDecoration(
                     filled: true,
-                    fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                    contentPadding: const EdgeInsets.all(16),
+                    fillColor: colorScheme.surfaceContainerHighest.withOpacity(
+                      0.5,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
                   ),
                 ),
 
@@ -348,7 +511,7 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
                   children: [
                     Expanded(
                       child: FilledButton.tonalIcon(
-                        icon: const Icon(Icons.copy, size: 18),
+                        icon: const Icon(Icons.copy),
                         label: const Text("Copy"),
                         onPressed: _copyToClipboard,
                       ),
@@ -356,7 +519,7 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: FilledButton.icon(
-                        icon: const Icon(Icons.share, size: 18),
+                        icon: const Icon(Icons.share),
                         label: const Text("WhatsApp"),
                         onPressed: _shareToWhatsApp,
                       ),
@@ -364,21 +527,26 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                
-                // --- SUBMIT BUTTON ---
+
                 SizedBox(
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      // CHANGE THIS LINE:
-                      backgroundColor: Colors.deepPurple, // Was Colors.green[700]
+                      backgroundColor: Colors.deepPurple,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      elevation: 4, // Added shadow for better look
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    icon: const Icon(Icons.check_circle, size: 22),
-                    label: const Text("Submit Attendance", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    icon: const Icon(Icons.check_circle),
+                    label: const Text(
+                      "Submit Attendance",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     onPressed: _submitAttendance,
                   ),
                 ),
@@ -415,8 +583,9 @@ class _LectureCardState extends State<LectureCard> {
   @override
   void initState() {
     super.initState();
-    for (var dept in widget.departments) {
-      _updateCount(dept.id!, widget.lecture.controllers[dept.id]!.text);
+    // Only verify counts for relevant departments
+    for (var deptId in widget.lecture.relevantDeptIds) {
+      _updateCount(deptId, widget.lecture.controllers[deptId]?.text ?? "");
     }
   }
 
@@ -442,8 +611,12 @@ class _LectureCardState extends State<LectureCard> {
     final Set<String> uniqueNumbers = {};
     final List<String> duplicates = [];
     final List<String> outOfBounds = [];
+
+    // UI Validation: Check against all students in Dept (Loose validation for UI feedback)
     final studentList = widget.studentCache[deptId] ?? [];
-    final validRollNumbers = studentList.map((s) => s['rollNumber'].toString()).toSet();
+    final validRollNumbers = studentList
+        .map((s) => s['rollNumber'].toString())
+        .toSet();
 
     for (var part in rawParts) {
       part = part.trim();
@@ -462,7 +635,7 @@ class _LectureCardState extends State<LectureCard> {
     if (duplicates.isNotEmpty) {
       errorMsg = "Duplicate: ${duplicates.join(', ')}";
     } else if (outOfBounds.isNotEmpty) {
-      errorMsg = "Invalid: ${outOfBounds.join(', ')}";
+      errorMsg = "Invalid Roll No: ${outOfBounds.join(', ')}";
     }
 
     setState(() => _errors[deptId] = errorMsg);
@@ -473,10 +646,21 @@ class _LectureCardState extends State<LectureCard> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    // --- DISPLAY LOGIC: Only show relevant departments ---
+    List<Department> visibleDepartments = widget.departments
+        .where((d) => widget.lecture.relevantDeptIds.contains(d.id))
+        .toList();
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
-      elevation: 2, 
+      elevation: 2,
       clipBehavior: Clip.antiAlias,
+      shape: widget.lecture.isElective
+          ? RoundedRectangleBorder(
+              side: const BorderSide(color: Colors.orange, width: 1.5),
+              borderRadius: BorderRadius.circular(12),
+            )
+          : null,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -489,11 +673,35 @@ class _LectureCardState extends State<LectureCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        widget.lecture.title,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            widget.lecture.title,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (widget.lecture.isElective)
+                            Container(
+                              margin: const EdgeInsets.only(left: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade100,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                "Elective",
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.deepOrange,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -512,7 +720,8 @@ class _LectureCardState extends State<LectureCard> {
             const Divider(),
             const SizedBox(height: 8),
 
-            ...widget.departments.map((dept) {
+            // DYNAMIC INPUT LIST
+            ...visibleDepartments.map((dept) {
               bool isDirect = widget.lecture.isDirectMode[dept.id]!;
               String? errorText = _errors[dept.id];
               int currentCount = _counts[dept.id] ?? 0;
@@ -528,7 +737,6 @@ class _LectureCardState extends State<LectureCard> {
                   decoration: InputDecoration(
                     labelText: dept.name,
                     alignLabelWithHint: true,
-                    
                     counter: Text(
                       currentCount > 0 ? "$currentCount Students" : "",
                       style: TextStyle(
@@ -536,23 +744,27 @@ class _LectureCardState extends State<LectureCard> {
                         color: colorScheme.primary,
                       ),
                     ),
-
-                    hintText: isDirect ? "Enter Absent Roll No." : "Enter Present Roll No.",
+                    hintText: isDirect
+                        ? "Enter Absent Roll No."
+                        : "Enter Present Roll No.",
                     errorText: errorText,
                     border: const OutlineInputBorder(),
-                    
                     suffixIcon: Tooltip(
                       message: isDirect ? "Mode: Absent" : "Mode: Present",
                       child: IconButton(
                         icon: Icon(
-                          isDirect ? Icons.person_off_outlined : Icons.how_to_reg,
-                          color: isDirect ? colorScheme.error : colorScheme.primary,
+                          isDirect
+                              ? Icons.person_off_outlined
+                              : Icons.how_to_reg,
+                          color: isDirect
+                              ? colorScheme.error
+                              : colorScheme.primary,
                         ),
                         onPressed: () {
-                           setState(() {
-                             widget.lecture.isDirectMode[dept.id!] = !isDirect;
-                             widget.onStateChange();
-                           });
+                          setState(() {
+                            widget.lecture.isDirectMode[dept.id!] = !isDirect;
+                            widget.onStateChange();
+                          });
                         },
                       ),
                     ),

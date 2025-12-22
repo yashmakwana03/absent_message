@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../models/student.dart';
-import 'student_input_screen.dart'; // <--- NEW IMPORT
+import 'student_input_screen.dart'; 
 
 class DataViewScreen extends StatefulWidget {
   const DataViewScreen({super.key});
@@ -87,7 +87,6 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
             TextField(
               controller: rollController,
               decoration: const InputDecoration(labelText: 'Roll Number', border: OutlineInputBorder()),
-              keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 16),
             TextField(
@@ -130,16 +129,15 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
     if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Student deleted")));
   }
 
+  // --- SAFE DELETE ALL (Students Only) ---
   Future<void> _deleteAllData() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("⚠️ FACTORY RESET"),
+        title: const Text("Clear Student Registry?"),
         content: const Text(
-          "This will wipe everything:\n\n"
-          "• All Students\n"
-          "• All Departments\n\n"
-          "Are you absolutely sure?",
+          "This will delete ALL Students and their Enrollments.\n\n"
+          "Lectures and Attendance Logs will NOT be deleted, but attendance counts might change.",
           style: TextStyle(color: Colors.black87),
         ),
         actions: [
@@ -147,18 +145,22 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text("DELETE EVERYTHING"),
+            child: const Text("DELETE STUDENTS"),
           ),
         ],
       ),
     );
 
     if (confirm == true) {
-      await DatabaseHelper.instance.deleteAllData(); // Ensure this method clears tables in DB Helper
+      final db = await DatabaseHelper.instance.database;
+      // Only delete Students and their links, keep the rest of the app safe
+      await db.delete('Student');
+      await db.delete('SubjectEnrollment');
+      
       _refreshData();
       if(mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("All data has been wiped.")),
+          const SnackBar(content: Text("Student Registry Cleared.")),
         );
       }
     }
@@ -171,14 +173,14 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
     return Scaffold(
       backgroundColor: Colors.grey[50], 
       appBar: AppBar(
-        title: const Text('Student Registry'), // Proper Title
+        title: const Text('Student Registry'),
         backgroundColor: primaryColor,
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.delete_forever),
-            tooltip: "Wipe All Data",
+            icon: const Icon(Icons.delete_sweep),
+            tooltip: "Clear Registry",
             onPressed: _deleteAllData,
           )
         ],
@@ -197,7 +199,6 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
         backgroundColor: primaryColor,
         child: const Icon(Icons.person_add, color: Colors.white),
         onPressed: () {
-          // Navigate to Add Student Screen and refresh when back
           Navigator.push(
             context, 
             MaterialPageRoute(builder: (context) => const StudentInputScreen())
@@ -238,11 +239,18 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
                       // Filter list for this tab + search query
                       final tabStudents = _filteredStudents.where((s) => s['departmentName'] == dept).toList();
                       
-                      // Sort by Roll Number
+                      // --- SMARTER SORTING ---
                       tabStudents.sort((a, b) {
+                        String r1 = a['rollNumber'].toString();
+                        String r2 = b['rollNumber'].toString();
                         try {
-                          return int.parse(a['rollNumber'].toString()).compareTo(int.parse(b['rollNumber'].toString()));
-                        } catch(e) { return 0; }
+                          // Try sorting numerically
+                          return int.parse(r1.replaceAll(RegExp(r'[^0-9]'), ''))
+                              .compareTo(int.parse(r2.replaceAll(RegExp(r'[^0-9]'), '')));
+                        } catch(e) { 
+                          // Fallback to alphabetical (e.g. C1 vs C2)
+                          return r1.compareTo(r2); 
+                        }
                       });
 
                       if (tabStudents.isEmpty) {
