@@ -14,10 +14,8 @@ class LectureState {
   final String faculty;
   final String time;
   final bool isElective;
-  final int primaryDeptId; // The "Host" Department (Fallback)
-
-  // NEW: Which departments actually have students in this class?
-  final Set<int> relevantDeptIds;
+  final int primaryDeptId;
+  final Set<int> relevantDeptIds; // Which Dept Boxes to show
 
   final Map<int, TextEditingController> controllers = {};
   final Map<int, bool> isDirectMode = {};
@@ -32,7 +30,6 @@ class LectureState {
     required this.relevantDeptIds,
     required List<Department> departments,
   }) {
-    // Initialize controllers only for relevant departments
     for (var deptId in relevantDeptIds) {
       controllers[deptId] = TextEditingController();
       isDirectMode[deptId] = true;
@@ -54,8 +51,6 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
   String _dayName = '';
   List<Department> _departments = [];
   List<LectureState> _lectureStates = [];
-
-  // Cache: DeptID -> List of Student Maps
   final Map<int, List<Map<String, dynamic>>> _studentCache = {};
 
   final TextEditingController _outputController = TextEditingController();
@@ -89,7 +84,6 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
     String dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
 
     for (var lecture in _lectureStates) {
-      // Only iterate through RELEVANT departments
       for (var deptId in lecture.relevantDeptIds) {
         String input = lecture.controllers[deptId]?.text ?? "";
         if (input.trim().isEmpty) continue;
@@ -144,6 +138,7 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
     await _loadLecturesForDate();
   }
 
+  // --- CORE LOGIC UPDATE HERE ---
   Future<void> _loadLecturesForDate() async {
     setState(() => _isLoading = true);
     _dayName = DateFormat('EEEE').format(_selectedDate);
@@ -157,32 +152,35 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
       bool isElective = l['isElective'] == 1;
       int primaryDeptId = l['deptId'];
 
-      // --- SMART LOGIC: ENROLLMENT-BASED VISIBILITY ---
-      // We don't care if it's "Elective" or "Core".
-      // We look at the actual enrollment data to decide which boxes to show.
-
       Set<int> relevantDepts = {};
 
-      // 1. Get all students enrolled in this specific lecture
-      final enrolledIds = await DatabaseHelper.instance.getEnrolledStudentIds(
-        id,
-      );
-      final enrolledSet = enrolledIds.toSet();
-
-      if (enrolledSet.isEmpty) {
-        // FALLBACK: If user hasn't enrolled anyone yet (e.g. new subject),
-        // show the Host Department so the UI isn't empty.
-        relevantDepts.add(primaryDeptId);
+      if (!isElective) {
+        // CASE 1: NOT ELECTIVE (Unchecked Box)
+        // Rule: Show BOTH (All) Departments.
+        // This assumes the class is mixed (CE + IT) by default.
+        for (var d in _departments) {
+          relevantDepts.add(d.id!);
+        }
       } else {
-        // 2. Check which departments these enrolled students belong to
-        _studentCache.forEach((deptId, students) {
-          // If ANY student in this dept is in the enrolled list, show this Dept's box
-          if (students.any((s) => enrolledSet.contains(s['id']))) {
-            relevantDepts.add(deptId);
-          }
-        });
+        // CASE 2: IS ELECTIVE (Checked Box)
+        // Rule: Show ONLY Selected Departments from Enrollment.
+        final enrolledIds = await DatabaseHelper.instance.getEnrolledStudentIds(
+          id,
+        );
+        final enrolledSet = enrolledIds.toSet();
+
+        if (enrolledSet.isEmpty) {
+          // Safety: If checked but no one enrolled yet, show Host Dept so user isn't stuck
+          relevantDepts.add(primaryDeptId);
+        } else {
+          // Check which departments the enrolled students belong to
+          _studentCache.forEach((deptId, students) {
+            if (students.any((s) => enrolledSet.contains(s['id']))) {
+              relevantDepts.add(deptId);
+            }
+          });
+        }
       }
-      // -----------------------------------------------------
 
       _lectureStates.add(
         LectureState(
@@ -192,7 +190,7 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
           time: l['timeSlot'],
           isElective: isElective,
           primaryDeptId: primaryDeptId,
-          relevantDeptIds: relevantDepts, // Pass the calculated list
+          relevantDeptIds: relevantDepts,
           departments: _departments,
         ),
       );
@@ -213,7 +211,6 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
 
     for (var log in existingLogs) {
       for (var lecture in _lectureStates) {
-        // Match by Title and Time
         if (lecture.title == log['subject'] &&
             lecture.time == log['timeSlot']) {
           String deptName = log['deptName'];
@@ -276,35 +273,32 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
         .where((e) => e.isNotEmpty)
         .toList();
 
-    // --- VALIDATION LOGIC ---
     List<String> validClassList = [];
 
-    // Get Enrollment List (Always check this first)
-    final enrolledIds = await DatabaseHelper.instance.getEnrolledStudentIds(
-      lecture.lectureId,
-    );
-    final enrolledSet = enrolledIds.toSet();
+    // --- Validation Logic ---
+    if (lecture.isElective) {
+      // Strict: Only Enrolled Students
+      final enrolledIds = await DatabaseHelper.instance.getEnrolledStudentIds(
+        lecture.lectureId,
+      );
+      final enrolledSet = enrolledIds.toSet();
+      final allStudentsInDept = _studentCache[deptId] ?? [];
 
-    final allStudentsInDept = _studentCache[deptId] ?? [];
-
-    if (enrolledSet.isEmpty) {
-      // Fallback: If no enrollment set, assume entire department (Safety)
       validClassList = allStudentsInDept
+          .where((s) => enrolledSet.contains(s['id']))
           .map((s) => s['rollNumber'].toString())
           .toList();
     } else {
-      // Strict Mode: Only students from this Dept who are ALSO enrolled
-      validClassList = allStudentsInDept
-          .where((s) => enrolledSet.contains(s['id']))
+      // Default: ALL students in Dept (since unchecked means mixed class)
+      final allStudents = _studentCache[deptId] ?? [];
+      validClassList = allStudents
           .map((s) => s['rollNumber'].toString())
           .toList();
     }
 
     if (isDirectMode) {
-      // Only return students who are actually in the valid list
       return inputRolls.where((roll) => validClassList.contains(roll)).toList();
     } else {
-      // Calculate Absent = Valid List - Present Input
       List<String> actualAbsentees = [];
       for (var roll in validClassList) {
         if (!inputRolls.contains(roll)) actualAbsentees.add(roll);
@@ -367,7 +361,6 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
       );
 
       for (var deptId in lecture.relevantDeptIds) {
-        // Find Dept Name
         String deptName = _departments.firstWhere((d) => d.id == deptId).name;
 
         String input = lecture.controllers[deptId]?.text ?? "";
@@ -612,7 +605,6 @@ class _LectureCardState extends State<LectureCard> {
     final List<String> duplicates = [];
     final List<String> outOfBounds = [];
 
-    // UI Validation: Check against all students in Dept (Loose validation for UI feedback)
     final studentList = widget.studentCache[deptId] ?? [];
     final validRollNumbers = studentList
         .map((s) => s['rollNumber'].toString())
@@ -646,7 +638,8 @@ class _LectureCardState extends State<LectureCard> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    // --- DISPLAY LOGIC: Only show relevant departments ---
+    // --- DISPLAY LOGIC ---
+    // Only show departments that are in the relevant list calculated in _loadLecturesForDate
     List<Department> visibleDepartments = widget.departments
         .where((d) => widget.lecture.relevantDeptIds.contains(d.id))
         .toList();
