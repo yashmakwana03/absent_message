@@ -63,10 +63,10 @@ Now, when faculty ask for attendance reviews, I can instantly provide HTML files
 <br>
 
 ### **4. Data Safety**
-| **11. Backup & Restore** | | | |
-|:---:|:---:|:---:|:---:|
-| <img src="assets/screenshots/11_backup.jpeg" width="200" /> | | | |
-| *Secure Data Backup* | | | |
+| **11. Backup & Restore** | 
+|:---:|
+| <img src="assets/screenshots/11_backup.jpeg" width="200" /> | 
+| *Secure Data Backup* | 
 
 ---
 
