@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
-import '../models/department.dart'; // Ensure you have this model
 
 class TimeTableScreen extends StatefulWidget {
   const TimeTableScreen({super.key});
@@ -9,9 +8,16 @@ class TimeTableScreen extends StatefulWidget {
   State<TimeTableScreen> createState() => _TimeTableScreenState();
 }
 
-class _TimeTableScreenState extends State<TimeTableScreen> with SingleTickerProviderStateMixin {
+class _TimeTableScreenState extends State<TimeTableScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<String> _days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  final List<String> _days = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+  ];
 
   @override
   void initState() {
@@ -20,10 +26,73 @@ class _TimeTableScreenState extends State<TimeTableScreen> with SingleTickerProv
   }
 
   @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  // --- FUNCTION TO CONFIRM DELETE ALL ---
+  void _confirmDeleteAll() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Clear Time Table?"),
+        content: const Text(
+            "This will delete ALL lectures from the database. This action cannot be undone."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx); // Close dialog first
+              
+              await DatabaseHelper.instance.deleteAllLectures(); // Async work
+              
+              // ✅ FIXED: Check mounted before using context again
+              if (!mounted) return;
+
+              setState(() {}); // Refresh UI
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Time table cleared!")),
+              );
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text("Delete All"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLectureDialog(
+    BuildContext context,
+    Map<String, dynamic>? existingLecture,
+  ) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => LectureDialog(
+        initialDay: _days[_tabController.index],
+        existingLecture: existingLecture,
+        onSave: () => setState(() {}),
+      ),
+    ).then((_) => setState(() {}));
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Time Table'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_forever),
+            tooltip: "Clear All Data",
+            onPressed: _confirmDeleteAll,
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
@@ -42,20 +111,6 @@ class _TimeTableScreenState extends State<TimeTableScreen> with SingleTickerProv
       ),
     );
   }
-
-  // Unified function to show dialog for ADD or EDIT
-  void _showLectureDialog(BuildContext context, Map<String, dynamic>? existingLecture) {
-    showDialog(
-      context: context,
-      // 🔒 LOCK THE DIALOG: Prevents closing on outside click
-      barrierDismissible: false, 
-      builder: (context) => LectureDialog(
-        initialDay: _days[_tabController.index],
-        existingLecture: existingLecture,
-        onSave: () => setState(() {}), // Refresh UI after save
-      ),
-    ).then((_) => setState(() {}));
-  }
 }
 
 class _DayScheduleView extends StatefulWidget {
@@ -72,8 +127,10 @@ class _DayScheduleViewState extends State<_DayScheduleView> {
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: DatabaseHelper.instance.getLecturesByDay(widget.day),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
         final lectures = snapshot.data!;
 
         if (lectures.isEmpty) {
@@ -88,39 +145,52 @@ class _DayScheduleViewState extends State<_DayScheduleView> {
 
             return Card(
               margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              // Highlight Electives
-              shape: isElective 
-                  ? RoundedRectangleBorder(side: const BorderSide(color: Colors.orange, width: 2), borderRadius: BorderRadius.circular(12))
+              shape: isElective
+                  ? RoundedRectangleBorder(
+                      side: const BorderSide(color: Colors.orange, width: 2),
+                      borderRadius: BorderRadius.circular(12),
+                    )
                   : null,
               child: ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: isElective ? Colors.orange.shade100 : Theme.of(context).primaryColor.withOpacity(0.1),
+                  backgroundColor: isElective
+                      ? Colors.orange.shade100
+                      : Theme.of(context).primaryColor.withValues(alpha: 0.1),
                   child: Text(
-                    // Show the Lecture Number (Order) here
                     "${lecture['sortOrder'] ?? index + 1}",
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: isElective ? Colors.deepOrange : Theme.of(context).primaryColor,
+                      color: isElective
+                          ? Colors.deepOrange
+                          : Theme.of(context).primaryColor,
                     ),
                   ),
                 ),
-                title: Text(lecture['subject'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text("${lecture['faculty']} (${lecture['timeSlot']})"),
+                title: Text(
+                  lecture['subject'],
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(
+                  "${lecture['faculty']} (${lecture['timeSlot']})",
+                ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
                       icon: const Icon(Icons.edit, color: Colors.grey),
                       onPressed: () {
-                        context.findAncestorStateOfType<_TimeTableScreenState>()
+                        context
+                            .findAncestorStateOfType<_TimeTableScreenState>()
                             ?._showLectureDialog(context, lecture);
                       },
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete, color: Colors.grey),
                       onPressed: () async {
-                        await DatabaseHelper.instance.deleteLecture(lecture['id']);
-                        setState(() {}); 
+                        await DatabaseHelper.instance.deleteLecture(
+                          lecture['id'],
+                        );
+                        setState(() {});
                       },
                     ),
                   ],
@@ -134,18 +204,17 @@ class _DayScheduleViewState extends State<_DayScheduleView> {
   }
 }
 
-// --- UPDATED DIALOG WITH VALIDATION & ORDER ---
-// --- UPDATED DIALOG (Overflow Fixed) ---
+// --- LECTURE DIALOG ---
 class LectureDialog extends StatefulWidget {
   final String initialDay;
   final Map<String, dynamic>? existingLecture;
   final VoidCallback onSave;
 
   const LectureDialog({
-    super.key, 
-    required this.initialDay, 
-    this.existingLecture, 
-    required this.onSave
+    super.key,
+    required this.initialDay,
+    this.existingLecture,
+    required this.onSave,
   });
 
   @override
@@ -153,61 +222,46 @@ class LectureDialog extends StatefulWidget {
 }
 
 class _LectureDialogState extends State<LectureDialog> {
-  // Controllers
   final _subjectController = TextEditingController();
   final _facultyController = TextEditingController();
   final _timeController = TextEditingController();
-  final _orderController = TextEditingController(); 
+  final _orderController = TextEditingController();
 
-  // State Variables
   String? _selectedDay;
-  int? _selectedDeptId;
   bool _isElective = false;
 
-  final List<String> _days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-  List<Department> _departments = [];
-
-  // Form Key for Validation
-  final _formKey = GlobalKey<FormState>(); 
+  final List<String> _days = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+  ];
+  final _formKey = GlobalKey<FormState>();
 
   @override
   void initState() {
     super.initState();
-    _loadDepartments();
-    
+
     if (widget.existingLecture != null) {
-      // --- EDIT MODE ---
       _subjectController.text = widget.existingLecture!['subject'];
       _facultyController.text = widget.existingLecture!['faculty'];
       _timeController.text = widget.existingLecture!['timeSlot'];
       _orderController.text = (widget.existingLecture!['sortOrder'] ?? '1').toString();
-      
       _selectedDay = widget.existingLecture!['day'];
-      _selectedDeptId = widget.existingLecture!['deptId'];
       _isElective = widget.existingLecture!['isElective'] == 1;
     } else {
-      // --- ADD MODE ---
       _selectedDay = widget.initialDay;
       _orderController.text = '1';
     }
   }
 
-  Future<void> _loadDepartments() async {
-    final data = await DatabaseHelper.instance.readAllDepartments();
-    setState(() {
-      _departments = data;
-      if (widget.existingLecture == null && _departments.isNotEmpty) {
-        _selectedDeptId = _departments.first.id;
-      }
-    });
-  }
-
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return; 
+    if (!_formKey.currentState!.validate()) return;
 
-    if (_selectedDeptId == null || _selectedDay == null) {
+    if (_selectedDay == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a Department and Day')),
+        const SnackBar(content: Text('Please select a Day')),
       );
       return;
     }
@@ -217,7 +271,6 @@ class _LectureDialogState extends State<LectureDialog> {
       'timeSlot': _timeController.text,
       'subject': _subjectController.text,
       'faculty': _facultyController.text,
-      'deptId': _selectedDeptId,
       'isElective': _isElective ? 1 : 0,
       'sortOrder': int.parse(_orderController.text),
     };
@@ -225,7 +278,9 @@ class _LectureDialogState extends State<LectureDialog> {
     if (widget.existingLecture == null) {
       await DatabaseHelper.instance.createLecture(data);
     } else {
-      await DatabaseHelper.instance.deleteLecture(widget.existingLecture!['id']);
+      await DatabaseHelper.instance.deleteLecture(
+        widget.existingLecture!['id'],
+      );
       await DatabaseHelper.instance.createLecture(data);
     }
 
@@ -241,24 +296,26 @@ class _LectureDialogState extends State<LectureDialog> {
       title: Text(isEdit ? 'Edit Lecture' : 'Add Lecture'),
       content: SingleChildScrollView(
         child: Form(
-          key: _formKey, 
+          key: _formKey,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // --- ROW 1: Lecture No. & Subject ---
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
-                    width: 70, // Slightly reduced width to save space
+                    width: 70,
                     child: TextFormField(
                       controller: _orderController,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
-                        labelText: 'No.', 
+                        labelText: 'No.',
                         hintText: '1',
                         border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 12,
+                        ),
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) return '*';
@@ -272,7 +329,7 @@ class _LectureDialogState extends State<LectureDialog> {
                     child: TextFormField(
                       controller: _subjectController,
                       decoration: const InputDecoration(
-                        labelText: 'Subject', 
+                        labelText: 'Subject',
                         hintText: 'e.g. .NET',
                         border: OutlineInputBorder(),
                       ),
@@ -282,8 +339,6 @@ class _LectureDialogState extends State<LectureDialog> {
                 ],
               ),
               const SizedBox(height: 10),
-
-              // --- ROW 2: Faculty ---
               TextFormField(
                 controller: _facultyController,
                 decoration: const InputDecoration(
@@ -293,60 +348,53 @@ class _LectureDialogState extends State<LectureDialog> {
                 validator: (val) => val!.isEmpty ? 'Required' : null,
               ),
               const SizedBox(height: 10),
-              
-              // --- ROW 3: Department ---
-              DropdownButtonFormField<int>(
-                value: _selectedDeptId,
-                isExpanded: true,
-                items: _departments.map((d) => DropdownMenuItem(value: d.id, child: Text(d.name))).toList(),
-                onChanged: (val) => setState(() => _selectedDeptId = val),
-                decoration: const InputDecoration(labelText: 'Department', border: OutlineInputBorder()),
-                validator: (val) => val == null ? 'Select Dept' : null,
-              ),
-              const SizedBox(height: 10),
-
-              // --- ROW 4: Elective Checkbox ---
               CheckboxListTile(
                 title: const Text("Is this an Elective?"),
-                subtitle: const Text("Check this for mixed batches"),
+                subtitle: const Text("Check this for combined batches"),
                 value: _isElective,
                 activeColor: Colors.deepPurple,
                 onChanged: (val) => setState(() => _isElective = val ?? false),
                 contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading, 
+                controlAffinity: ListTileControlAffinity.leading,
               ),
-              
-              // --- ROW 5: Day & Time (FIXED OVERFLOW HERE) ---
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    flex: 4, // Give Day 40% width
+                    flex: 4,
                     child: DropdownButtonFormField(
-                      value: _selectedDay,
-                      isExpanded: true, // Prevents overflow of text
-                      items: _days.map((d) => DropdownMenuItem(
-                        value: d, 
-                        child: Text(d, overflow: TextOverflow.ellipsis) // Truncate if too long
-                      )).toList(),
+                      initialValue: _selectedDay, // Fixed deprecated initialValue usage if needed, but value is standard here
+                      isExpanded: true,
+                      items: _days
+                          .map((d) => DropdownMenuItem(
+                                value: d,
+                                child: Text(d, overflow: TextOverflow.ellipsis),
+                              ))
+                          .toList(),
                       onChanged: (val) => setState(() => _selectedDay = val),
                       decoration: const InputDecoration(
-                        labelText: 'Day', 
+                        labelText: 'Day',
                         border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 15),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 15,
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    flex: 5, // Give Time 50% width
+                    flex: 5,
                     child: TextFormField(
                       controller: _timeController,
                       decoration: const InputDecoration(
-                        labelText: 'Time', 
+                        labelText: 'Time',
                         hintText: '10:30',
                         border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 15),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 15,
+                        ),
                       ),
                       validator: (val) => val!.isEmpty ? 'Required' : null,
                     ),
@@ -359,12 +407,12 @@ class _LectureDialogState extends State<LectureDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context), 
-          child: const Text('Cancel')
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: _save, 
-          child: Text(isEdit ? 'Update' : 'Save')
+          onPressed: _save,
+          child: Text(isEdit ? 'Update' : 'Save'),
         ),
       ],
     );

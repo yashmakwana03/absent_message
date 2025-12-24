@@ -36,32 +36,66 @@ Now, when faculty ask for attendance reviews, I can instantly provide HTML files
 
 ---
 
-## 📸 App Tour
+## 📸 App Tour & Screenshots
 
-### **1. Getting Started**
-
-|                    **Splash Screen**                     |                   **Home Dashboard**                   |                        **Add Student**                        |
-| :------------------------------------------------------: | :----------------------------------------------------: | :-----------------------------------------------------------: |
-| <img src="assets/screenshots/splash.jpeg" width="250" /> | <img src="assets/screenshots/home.jpeg" width="250" /> | <img src="assets/screenshots/add_student.jpeg" width="250" /> |
-|             _Modern animated splash screen._             |           _Central hub with Quick Actions._            |          _Easily add students manually or in bulk._           |
-
-<br>
-
-### **2. Attendance Management**
-
-|                        **Take Attendance**                        |                      **Daily Dashboard**                      |                    **Export Reports**                    |
-| :---------------------------------------------------------------: | :-----------------------------------------------------------: | :------------------------------------------------------: |
-| <img src="assets/screenshots/take_attendance.jpeg" width="250" /> | <img src="assets/screenshots/daily_stats.jpeg" width="250" /> | <img src="assets/screenshots/export.jpeg" width="250" /> |
-|                  _Mark absent students quickly._                  |                _View daily breakdown & stats._                |          _Generate reports for specific dates._          |
+### **1. Getting Started & Setup**
+| **Splash Screen** | **Home Dashboard** | **1. Departments** | **2. Student Registry** |
+|:---:|:---:|:---:|:---:|
+| <img src="assets/screenshots/splash.jpeg" width="200" /> | <img src="assets/screenshots/home.jpeg" width="200" /> | <img src="assets/screenshots/1_dept.jpeg" width="200" /> | <img src="assets/screenshots/2_student.jpeg" width="200" /> |
+| *App Entry* | *Main Hub & Actions* | *Setup Depts* | *Manage Students* |
 
 <br>
 
-### **3. Student Analytics & Data**
+### **2. Scheduling & Attendance**
+| **3. Time Table** | **4. Elective Setup** | **5. Take Attendance** | **6. Daily Report** |
+|:---:|:---:|:---:|:---:|
+| <img src="assets/screenshots/3_timetable.jpeg" width="200" /> | <img src="assets/screenshots/4_elective.jpeg" width="200" /> | <img src="assets/screenshots/5_take_attendance.jpeg" width="200" /> | <img src="assets/screenshots/6_daily_dashboard.jpeg" width="200" /> |
+| *Weekly Schedule* | *Elective Batches* | *Mark Absent/Present* | *Daily Stats View* |
 
-|                        **Student List**                        |                        **Student Profile**                        |                   **Backup & Restore**                   |
-| :------------------------------------------------------------: | :---------------------------------------------------------------: | :------------------------------------------------------: |
-| <img src="assets/screenshots/student_list.jpeg" width="250" /> | <img src="assets/screenshots/student_profile.jpeg" width="250" /> | <img src="assets/screenshots/backup.jpeg" width="250" /> |
-|                 _Search and view class lists._                 |             _Detailed individual attendance reports._             |             _Secure your data with one tap._             |
+<br>
+
+### **3. Insights & Reports**
+| **7. Analytics** | **8. View Logs** | **9. Share / Output** | **10. HTML Report** |
+|:---:|:---:|:---:|:---:|
+| <img src="assets/screenshots/7_analytics.jpeg" width="200" /> | <img src="assets/screenshots/8_view_log.jpeg" width="200" /> | <img src="assets/screenshots/9_share_output.jpeg" width="200" /> | <img src="assets/screenshots/10_html_report.jpeg" width="200" /> |
+| *Defaulter Lists* | *Edit/Delete History* | *Auto-Message* | *Detailed Export* |
+
+<br>
+
+### **4. Data Safety**
+| **11. Backup & Restore** | | | |
+|:---:|:---:|:---:|:---:|
+| <img src="assets/screenshots/11_backup.jpeg" width="200" /> | | | |
+| *Secure Data Backup* | | | |
+
+---
+
+## 📂 Project Structure & File Guide
+
+Here is a quick map of the codebase to help developers understand the purpose of each file:
+
+### **Core**
+- **`main.dart`**: The entry point. Sets up the app theme, routes, and initializes the root widget.
+- **`database/database_helper.dart`**: The "brain" of the app. Handles all SQLite operations (CRUD), table creation, and complex queries for reports.
+
+### **Screens (UI)**
+- **`splash_screen.dart`**: The animated startup screen with the app logo.
+- **`home_screen.dart`**: The main dashboard containing the "Take Attendance" button, daily summary widgets, and navigation grid.
+- **`report_generator_v3.dart`**: The core screen for taking attendance. It allows CRs to toggle absentees and generate the final message.
+- **`daily_report_screen.dart`**: Displays a visual summary of the day's attendance (Present vs Absent charts).
+- **`search_screen.dart`**: A powerful analytics dashboard. Allows searching for students, sorting by "Defaulters" (low attendance), and viewing class performance.
+- **`student_detail_screen.dart`**: Shows a 360° view of a specific student, including their overall percentage, subject-wise breakdown, and dates absent.
+- **`custom_report_screen.dart`**: Allows users to select a date range and export detailed reports as HTML or Text.
+- **`time_table_screen.dart`**: Manages the weekly class schedule and defines which subjects are Electives.
+- **`manage_enrollment_screen.dart`**: Handles mapping students to specific elective subjects.
+- **`student_input_screen.dart`**: Provides forms to add students manually or via a bulk text import feature.
+- **`department_setup_screen.dart`**: A setup screen to configure department names (e.g., CE, IT) before adding students.
+- **`backup_screen.dart`**: Interface for exporting the database file (`.db`) or restoring from a backup.
+- **`about_me_screen.dart`**: A portfolio page displaying developer information and contact links.
+
+### **Models**
+- **`student.dart`**, **`department.dart`**: Data models representing the database entities.
+- **`student_report_models.dart`**: Helper models used to calculate and pass analytics data between screens.
 
 ---
 
@@ -75,6 +109,7 @@ Now, when faculty ask for attendance reviews, I can instantly provide HTML files
   - `share_plus` (Sharing Messages & Exports)
   - `path_provider` (File System Access)
   - `intl` (Date Formatting)
+  - `file_picker` (Restoring Backups)
 
 ---
 
@@ -83,7 +118,7 @@ Now, when faculty ask for attendance reviews, I can instantly provide HTML files
 1.  **Clone the Repo**
 
     ```bash
-    git clone [https://github.com/yashmakwana03/attendance_manager.git](https://github.com/yashmakwana03/attendance_manager.git)
+    git clone [https://github.com/yashmakwana03/absent_message.git](https://github.com/yashmakwana03/absent_message.git)
     ```
 
 2.  **Install Dependencies**

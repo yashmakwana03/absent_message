@@ -1,230 +1,148 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../database/database_helper.dart';
 import '../models/student_report_models.dart';
 
-class StudentDetailScreen extends StatelessWidget {
+class StudentDetailScreen extends StatefulWidget {
   final StudentReport student;
   const StudentDetailScreen({super.key, required this.student});
 
   @override
+  State<StudentDetailScreen> createState() => _StudentDetailScreenState();
+}
+
+class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  List<Map<String, dynamic>> _absentHistory = [];
+  bool _isLoadingHistory = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _fetchAbsentHistory();
+  }
+
+  Future<void> _fetchAbsentHistory() async {
+    final allLogs = await DatabaseHelper.instance.getAttendanceLogs();
+    
+    List<Map<String, dynamic>> history = [];
+
+    for (var log in allLogs) {
+      String absentees = log['absentees'] ?? "";
+      List<String> absList = absentees.split(',').map((e) => e.trim()).toList();
+      
+      if (absList.contains(widget.student.rollNo)) {
+        history.add({
+          'date': log['date'],
+          'subject': log['subject'],
+          'timeSlot': log['timeSlot']
+        });
+      }
+    }
+
+    history.sort((a, b) => b['date'].compareTo(a['date']));
+
+    if (mounted) {
+      setState(() {
+        _absentHistory = history;
+        _isLoadingHistory = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final primaryColor = Colors.deepPurple;
+    bool isLowAttendance = widget.student.overallAttendancePercentage < 75;
+    Color statusColor = isLowAttendance ? Colors.redAccent : Colors.green;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
       appBar: AppBar(
-        title: const Text('Student Report'),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black),
-        titleTextStyle: const TextStyle(
-          color: Colors.black,
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-        ),
+        title: const Text("Student Profile"),
+        backgroundColor: primaryColor,
+        foregroundColor: Colors.white,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    student.name,
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
+      body: Column(
+        children: [
+          Container(
+            color: primaryColor,
+            padding: const EdgeInsets.only(bottom: 30, left: 20, right: 20),
+            child: Row(
+              children: [
+                Container(
+                  width: 80, height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: statusColor, width: 4),
+                  ),
+                  child: Center(
+                    child: Text(
+                      "${widget.student.overallAttendancePercentage}%",
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: statusColor),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Roll No: ${student.rollNo}',
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontSize: 15,
-                            ),
-                          ),
-                          Text(
-                            'Dept: ${student.department}',
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontSize: 15,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      CircularProgressIndicator(
-                        value: student.overallAttendancePercentage / 100,
-                        backgroundColor: Colors.grey[200],
-                        color: student.overallAttendancePercentage < 75
-                            ? Colors.red
-                            : Colors.green,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: _SummaryBox(
-                    label: 'Total Absent',
-                    value: '${student.totalAbsentLectures}',
-                    bgColor: const Color(0xFFFFF1F2),
-                    textColor: Colors.red,
-                  ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 20),
                 Expanded(
-                  child: _SummaryBox(
-                    label: 'Attendance %',
-                    value: '${student.overallAttendancePercentage}%',
-                    bgColor: const Color(0xFFECFDF5),
-                    textColor: Colors.green,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(widget.student.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                      const SizedBox(height: 4),
+                      Text("Roll No: ${widget.student.rollNo}", style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                      const SizedBox(height: 4),
+                      Text(widget.student.department, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              color: Colors.white,
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: [
-                    const Text(
-                      'Report Lecture Wise',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const Divider(height: 24),
-                    if (student.subjectRecords.isEmpty)
-                      const Text(
-                        "No records found",
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    ...student.subjectRecords.map(
-                      (r) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 4,
-                              child: Text(
-                                r.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              flex: 2,
-                              child: Center(
-                                child: Text(
-                                  '${r.present} P',
-                                  style: const TextStyle(
-                                    color: Colors.blue,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              flex: 2,
-                              child: Center(
-                                child: Text(
-                                  '${r.absent} A',
-                                  style: const TextStyle(
-                                    color: Colors.red,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              flex: 2,
-                              child: Center(
-                                child: Text(
-                                  '${r.percentage}%',
-                                  style: TextStyle(
-                                    color: r.percentage < 75
-                                        ? Colors.red
-                                        : Colors.green,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SummaryBox extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color bgColor;
-  final Color textColor;
-  const _SummaryBox({
-    required this.label,
-    required this.value,
-    required this.bgColor,
-    required this.textColor,
-  });
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: textColor.withOpacity(0.8),
-              fontWeight: FontWeight.w600,
+          ),
+          Container(
+            color: Colors.white,
+            child: TabBar(
+              controller: _tabController,
+              labelColor: primaryColor,
+              unselectedLabelColor: Colors.grey,
+              indicatorColor: primaryColor,
+              tabs: const [Tab(text: "Subject Wise"), Tab(text: "Absent History")],
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: textColor,
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: widget.student.subjectRecords.length,
+                  itemBuilder: (context, index) {
+                    final sub = widget.student.subjectRecords[index];
+                    int total = sub.present + sub.absent;
+                    double percent = total == 0 ? 0 : (sub.present / total);
+                    return ListTile(
+                      title: Text(sub.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: LinearProgressIndicator(value: percent, color: percent < 0.75 ? Colors.red : Colors.green),
+                      trailing: Text("${(percent * 100).toInt()}%"),
+                    );
+                  },
+                ),
+                _isLoadingHistory 
+                  ? const Center(child: CircularProgressIndicator()) 
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _absentHistory.length,
+                      itemBuilder: (context, index) {
+                        final item = _absentHistory[index];
+                        return ListTile(
+                          title: Text(item['subject']),
+                          subtitle: Text(DateFormat('dd MMM yyyy').format(DateTime.parse(item['date']))),
+                          trailing: const Text("Absent", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                        );
+                      },
+                    ),
+              ],
             ),
           ),
         ],

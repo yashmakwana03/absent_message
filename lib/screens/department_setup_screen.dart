@@ -53,7 +53,7 @@ class _DepartmentSetupScreenState extends State<DepartmentSetupScreen> {
     });
   }
 
-  // --- DELETE LOGIC (Show Below, No Redirect) ---
+  // --- DELETE LOGIC ---
   Future<void> _deleteField(int index) async {
     final deptId = _deptFields[index]['id'] as int?;
 
@@ -81,14 +81,20 @@ class _DepartmentSetupScreenState extends State<DepartmentSetupScreen> {
 
       if (confirm == true) {
         await DatabaseHelper.instance.deleteDepartment(deptId);
-        setState(() {
-          _deptFields[index]['controller'].dispose();
-          _deptFields.removeAt(index);
-        });
-        if (mounted)
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text("Department Deleted")));
+        
+        if (mounted) {
+          setState(() {
+            _deptFields[index]['controller'].dispose();
+            _deptFields.removeAt(index);
+          });
+        }
+
+        // FIX 1: Added curly braces for flow control
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Department Deleted")),
+          );
+        }
       }
     } else {
       // If it's a new unsaved field, just remove it from UI
@@ -125,6 +131,9 @@ class _DepartmentSetupScreenState extends State<DepartmentSetupScreen> {
       }
     }
 
+    // FIX 2 & 3: Check mounted before using context after async gaps
+    if (!mounted) return;
+
     if (hasError) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Skipped empty fields. Others saved!')),
@@ -135,12 +144,10 @@ class _DepartmentSetupScreenState extends State<DepartmentSetupScreen> {
       );
     }
 
-    // Optional: Go to next screen if needed, or stay here
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const StudentInputScreen()),
-      );
-    }
+    // Navigate to next screen
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => const StudentInputScreen()),
+    );
   }
 
   @override

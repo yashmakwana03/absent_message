@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:path/path.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -25,7 +24,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2, // Version 2 for schema updates
+      version: 2,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -53,6 +52,7 @@ class DatabaseHelper {
     ''');
 
     // 3. Lectures (Time Table)
+    // FIXED: Removed 'deptId' and removed the trailing comma after sortOrder
     await db.execute('''
       CREATE TABLE Lecture (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,14 +60,13 @@ class DatabaseHelper {
         timeSlot TEXT NOT NULL,
         subject TEXT NOT NULL,
         faculty TEXT NOT NULL,
-        deptId INTEGER NOT NULL,
         isElective INTEGER DEFAULT 0,
-        sortOrder INTEGER DEFAULT 1, 
-        FOREIGN KEY (deptId) REFERENCES Department (id) ON DELETE CASCADE
+        sortOrder INTEGER DEFAULT 1
       )
     ''');
 
     // 4. Attendance Logs
+    // Note: deptId stays here because a Log belongs to a specific department
     await db.execute('''
       CREATE TABLE AttendanceLog (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -91,17 +90,30 @@ class DatabaseHelper {
     ''');
   }
 
+  // Handle upgrades for existing users (if any)
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      await db.execute(
-        'ALTER TABLE Lecture ADD COLUMN isElective INTEGER DEFAULT 0',
-      );
-      await db.execute(
-        'ALTER TABLE Lecture ADD COLUMN sortOrder INTEGER DEFAULT 1',
-      );
+      // In a real production app, you might need complex logic to remove columns.
+      // For development, simply uninstalling is easier.
+      // These lines add new columns if upgrading from v1
+      try {
+        await db.execute(
+          'ALTER TABLE Lecture ADD COLUMN isElective INTEGER DEFAULT 0',
+        );
+      } catch (e) {
+        // Column might already exist
+      }
+
+      try {
+        await db.execute(
+          'ALTER TABLE Lecture ADD COLUMN sortOrder INTEGER DEFAULT 1',
+        );
+      } catch (e) {
+        // Column might already exist
+      }
 
       await db.execute('''
-        CREATE TABLE SubjectEnrollment (
+        CREATE TABLE IF NOT EXISTS SubjectEnrollment (
           lectureId INTEGER NOT NULL,
           studentId INTEGER NOT NULL,
           PRIMARY KEY (lectureId, studentId),
@@ -189,7 +201,6 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getLecturesByDay(String day) async {
     final db = await database;
-    // Sort by sortOrder so lectures appear in correct sequence
     return await db.query(
       'Lecture',
       where: 'day = ?',
@@ -203,7 +214,12 @@ class DatabaseHelper {
     return await db.delete('Lecture', where: 'id = ?', whereArgs: [id]);
   }
 
-  // --- ENROLLMENT METHODS (New for V3) ---
+  Future<void> deleteAllLectures() async {
+    final db = await database;
+    await db.delete('Lecture');
+  }
+
+  // --- ENROLLMENT METHODS ---
   Future<List<Map<String, dynamic>>> getElectiveLectures() async {
     final db = await database;
     return await db.query('Lecture', where: 'isElective = 1');
@@ -284,6 +300,7 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getAttendanceLogs({String? date}) async {
     final db = await database;
+    // Note: We join Department on Log.deptId, not Lecture.deptId (since Lecture no longer has it)
     String query = '''
       SELECT l.*, lec.subject, lec.timeSlot, d.name as deptName
       FROM AttendanceLog l

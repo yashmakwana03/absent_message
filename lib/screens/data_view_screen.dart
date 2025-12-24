@@ -1,3 +1,5 @@
+//  Register Students - View, Edit, Delete
+
 import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../models/student.dart';
@@ -35,7 +37,6 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
     setState(() => _isLoading = true);
     final data = await DatabaseHelper.instance.readAllStudentsWithDeptName();
     
-    // Extract unique department names for tabs
     final depts = data.map((s) => s['departmentName'] as String).toSet().toList();
     depts.sort();
 
@@ -45,7 +46,6 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
         _filteredStudents = data;
         _deptNames = depts;
         
-        // Initialize TabController based on department count
         _tabController?.dispose();
         if (depts.isNotEmpty) {
           _tabController = TabController(length: depts.length, vsync: this);
@@ -79,7 +79,8 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      // Rename context to dialogCtx to avoid confusion with parent context
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('Edit Student'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -96,7 +97,7 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
               final updatedStudent = Student(
@@ -107,13 +108,21 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
               );
               try {
                 await DatabaseHelper.instance.updateStudent(updatedStudent);
+                
+                // FIX: Check if dialog is still mounted before popping
+                if (dialogCtx.mounted) {
+                  Navigator.pop(dialogCtx);
+                }
+
+                // FIX: Check if parent widget is mounted before using scaffold/refresh
                 if (mounted) {
-                  Navigator.pop(context);
                   _refreshData();
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Updated successfully!')));
                 }
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error: Duplicate Roll Number?')));
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error: Duplicate Roll Number?')));
+                }
               }
             },
             child: const Text('Save'),
@@ -125,11 +134,13 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
 
   Future<void> _deleteStudent(int id) async {
     await DatabaseHelper.instance.deleteStudent(id);
-    _refreshData();
-    if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Student deleted")));
+    // FIX: Check mounted before using context after await
+    if (mounted) {
+      _refreshData();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Student deleted")));
+    }
   }
 
-  // --- SAFE DELETE ALL (Students Only) ---
   Future<void> _deleteAllData() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -137,7 +148,7 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
         title: const Text("Clear Student Registry?"),
         content: const Text(
           "This will delete ALL Students and their Enrollments.\n\n"
-          "Lectures and Attendance Logs will NOT be deleted, but attendance counts might change.",
+          "Lectures and Attendance Logs will NOT be deleted.",
           style: TextStyle(color: Colors.black87),
         ),
         actions: [
@@ -145,7 +156,7 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text("DELETE STUDENTS"),
+            child: const Text("DELETE ALL"),
           ),
         ],
       ),
@@ -153,12 +164,11 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
 
     if (confirm == true) {
       final db = await DatabaseHelper.instance.database;
-      // Only delete Students and their links, keep the rest of the app safe
       await db.delete('Student');
       await db.delete('SubjectEnrollment');
       
-      _refreshData();
-      if(mounted) {
+      if (mounted) {
+        _refreshData();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Student Registry Cleared.")),
         );
@@ -232,23 +242,20 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
             child: _isLoading 
               ? const Center(child: CircularProgressIndicator())
               : _deptNames.isEmpty
-                ? const Center(child: Text("No data found. Tap + to add students."))
+                ? const Center(child: Text("No data found."))
                 : TabBarView(
                     controller: _tabController,
                     children: _deptNames.map((dept) {
-                      // Filter list for this tab + search query
                       final tabStudents = _filteredStudents.where((s) => s['departmentName'] == dept).toList();
                       
-                      // --- SMARTER SORTING ---
+                      // Sort Numerically
                       tabStudents.sort((a, b) {
                         String r1 = a['rollNumber'].toString();
                         String r2 = b['rollNumber'].toString();
                         try {
-                          // Try sorting numerically
                           return int.parse(r1.replaceAll(RegExp(r'[^0-9]'), ''))
                               .compareTo(int.parse(r2.replaceAll(RegExp(r'[^0-9]'), '')));
                         } catch(e) { 
-                          // Fallback to alphabetical (e.g. C1 vs C2)
                           return r1.compareTo(r2); 
                         }
                       });
@@ -258,7 +265,7 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
                       }
 
                       return ListView.builder(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.only(top: 12, left: 12, right: 12, bottom: 80), // Added bottom padding for FAB
                         itemCount: tabStudents.length,
                         itemBuilder: (context, index) {
                           final s = tabStudents[index];
@@ -268,7 +275,8 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             child: ListTile(
                               leading: CircleAvatar(
-                                backgroundColor: primaryColor.withOpacity(0.1),
+                                // FIX: Use withValues(alpha: ...) instead of withOpacity
+                                backgroundColor: primaryColor.withValues(alpha: 0.1),
                                 child: Text(
                                   s['rollNumber'].toString(),
                                   style: TextStyle(fontWeight: FontWeight.bold, color: primaryColor),
@@ -276,19 +284,23 @@ class _DataViewScreenState extends State<DataViewScreen> with SingleTickerProvid
                               ),
                               title: Text(s['name'], style: const TextStyle(fontWeight: FontWeight.w600)),
                               
-                              trailing: PopupMenuButton<String>(
-                                onSelected: (value) {
-                                  if (value == 'edit') _editStudent(s);
-                                  if (value == 'delete') _deleteStudent(s['id']);
-                                },
-                                itemBuilder: (context) => [
-                                  const PopupMenuItem(
-                                    value: 'edit',
-                                    child: Row(children: [Icon(Icons.edit, size: 20), SizedBox(width: 10), Text("Edit")]),
+                              // --- DIRECT BUTTONS ROW ---
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, size: 20, color: Colors.blueGrey),
+                                    onPressed: () => _editStudent(s),
+                                    tooltip: "Edit",
+                                    constraints: const BoxConstraints(), // Compact
+                                    padding: const EdgeInsets.symmetric(horizontal: 8),
                                   ),
-                                  const PopupMenuItem(
-                                    value: 'delete',
-                                    child: Row(children: [Icon(Icons.delete, color: Colors.red, size: 20), SizedBox(width: 10), Text("Delete", style: TextStyle(color: Colors.red))]),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete, size: 20, color: Colors.redAccent),
+                                    onPressed: () => _deleteStudent(s['id']),
+                                    tooltip: "Delete",
+                                    constraints: const BoxConstraints(), // Compact
+                                    padding: const EdgeInsets.symmetric(horizontal: 8),
                                   ),
                                 ],
                               ),

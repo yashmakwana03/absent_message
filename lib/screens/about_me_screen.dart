@@ -17,13 +17,18 @@ class AboutMeScreen extends StatelessWidget {
   static const String _appDesc = 
       "A smart mobile solution designed to eliminate paper-based attendance. "
       "Track daily attendance, manage records, and generate instant analytics.";
+  
+  
+  static const String _projectRepoUrl = "https://github.com/yashmakwana03/absent_message/";
 
-  // --- Links ---
+  static const String _mobileNumber = "+918401811288"; 
+  
   static const String _email = "yashmakwana2275@gmail.com";
   static const String _githubUrl = "https://github.com/yashmakwana03";
   static const String _linkedinUrl = "https://www.linkedin.com/in/yashmakwana03/";
   static const String _instagramUrl = "https://instagram.com/yashmakwana03";
 
+  // --- Launchers ---
   Future<void> _launchUrl(String urlString) async {
     final Uri url = Uri.parse(urlString);
     try {
@@ -39,33 +44,48 @@ class AboutMeScreen extends StatelessWidget {
     final Uri emailLaunchUri = Uri(
       scheme: 'mailto',
       path: _email,
-      query: 'subject=Inquiry regarding Attendance App', 
+      query: 'subject=Attendance App Feedback&body=Hello Yash,', 
     );
-    await launchUrl(emailLaunchUri);
+    try {
+      await launchUrl(emailLaunchUri);
+    } catch (e) {
+      debugPrint("Error launching email");
+    }
+  }
+
+  Future<void> _launchPhone() async {
+    final Uri phoneUri = Uri(
+      scheme: 'tel',
+      path: _mobileNumber,
+    );
+    try {
+      await launchUrl(phoneUri);
+    } catch (e) {
+      debugPrint("Error launching phone");
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Define a professional gradient based on your primary color
     final primaryColor = Theme.of(context).primaryColor;
-    final gradientColors = [primaryColor, primaryColor.withOpacity(0.7)];
+    final gradientColors = [primaryColor, primaryColor.withValues(alpha: 0.7)];
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
-      extendBodyBehindAppBar: true, // Allows header to go behind AppBar
+      extendBodyBehindAppBar: true, 
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: SingleChildScrollView(
-        padding: EdgeInsets.zero, // Remove default padding for header
+        padding: EdgeInsets.zero, 
         child: Column(
           children: [
             // --- HEADER ---
             _buildHeader(context, gradientColors),
             
-            const SizedBox(height: 60), // Space for Profile Pic overlap
+            const SizedBox(height: 60), 
 
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -92,8 +112,8 @@ class AboutMeScreen extends StatelessWidget {
 
                   const SizedBox(height: 30),
                   
-                  // --- TECH STACK (Split for clarity) ---
-                  _buildSectionTitle("Built With (App)"),
+                  // --- SKILLS SECTION (Kept MERN Stack) ---
+                  _buildSectionTitle("Tech Stack & Skills"),
                   Wrap(
                     spacing: 8, runSpacing: 8,
                     alignment: WrapAlignment.center,
@@ -104,34 +124,36 @@ class AboutMeScreen extends StatelessWidget {
                       _TechChip(label: "Share Plus", color: Colors.teal),
                     ],
                   ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  Text("My Other Skills", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey[600])),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8, runSpacing: 8,
                     alignment: WrapAlignment.center,
                     children: [
                       _TechChip(label: "MERN Stack", color: Colors.grey.shade800),
+                      _TechChip(label: "MongoDB", color: Colors.grey.shade800),
+                      _TechChip(label: "Express.js", color: Colors.grey.shade800),
                       _TechChip(label: "React.js", color: Colors.grey.shade800),
                       _TechChip(label: "Node.js", color: Colors.grey.shade800),
-                      _TechChip(label: "MongoDB", color: Colors.grey.shade800),
                     ],
                   ),
 
                   const SizedBox(height: 40),
 
                   // --- SOCIAL LINKS ---
+                  const Text("Contact Me", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey)),
+                  const SizedBox(height: 15),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       _SocialButton(icon: FontAwesomeIcons.github, color: Colors.black, onTap: () => _launchUrl(_githubUrl)),
-                      const SizedBox(width: 20),
+                      const SizedBox(width: 16),
                       _SocialButton(icon: FontAwesomeIcons.linkedin, color: const Color(0xFF0077B5), onTap: () => _launchUrl(_linkedinUrl)),
-                      const SizedBox(width: 20),
+                      const SizedBox(width: 16),
                       _SocialButton(icon: FontAwesomeIcons.instagram, color: const Color(0xFFE4405F), onTap: () => _launchUrl(_instagramUrl)),
-                      const SizedBox(width: 20),
+                      const SizedBox(width: 16),
+                      // ✅ Phone Button
+                      _SocialButton(icon: Icons.call, color: Colors.green, onTap: _launchPhone),
+                      const SizedBox(width: 16),
                       _SocialButton(icon: Icons.email, color: const Color(0xFFDB4437), onTap: _launchEmail),
                     ],
                   ),
@@ -143,7 +165,7 @@ class AboutMeScreen extends StatelessWidget {
                     opacity: 0.6,
                     child: Column(
                       children: const [
-                        Text("Designed with ❤️ by Yash", style: TextStyle(fontSize: 13)),
+                        Text("Designed by Yash", style: TextStyle(fontSize: 13)),
                         SizedBox(height: 4),
                         Text("RK University (Computer Dept)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                         SizedBox(height: 40),
@@ -159,7 +181,7 @@ class AboutMeScreen extends StatelessWidget {
     );
   }
 
-  // --- WIDGET BUILDERS ---
+  // --- WIDGETS ---
 
   Widget _buildSectionTitle(String title) {
     return Padding(
@@ -176,7 +198,6 @@ class AboutMeScreen extends StatelessWidget {
       clipBehavior: Clip.none,
       alignment: Alignment.center,
       children: [
-        // Curved Background
         ClipPath(
           clipper: _HeaderClipper(),
           child: Container(
@@ -190,21 +211,20 @@ class AboutMeScreen extends StatelessWidget {
             ),
           ),
         ),
-        // Profile Picture
         Positioned(
           bottom: -50,
           child: Container(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white, width: 5),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 15, offset: const Offset(0, 8))],
+              // ✅ Fixed Deprecation
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 15, offset: const Offset(0, 8))],
             ),
             child: const CircleAvatar(
               radius: 65,
               backgroundColor: Colors.white,
-              // Handles image loading errors gracefully
+              // Ensure this image exists in your assets folder!
               backgroundImage: AssetImage('assets/profile.jpeg'),
-              child:  null, // You can add an Icon(Icons.person) here if image fails logic is added
             ),
           ),
         ),
@@ -223,14 +243,16 @@ class AboutMeScreen extends StatelessWidget {
   Widget _buildProjectCard(Color color) {
     return Card(
       elevation: 4,
-      shadowColor: color.withOpacity(0.3),
+      // ✅ Fixed Deprecation
+      shadowColor: color.withValues(alpha: 0.3),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.08),
+              // ✅ Fixed Deprecation
+              color: color.withValues(alpha: 0.08),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Row(
@@ -247,10 +269,14 @@ class AboutMeScreen extends StatelessWidget {
                     children: [
                       Text(_appName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                       const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(color: Colors.green.shade100, borderRadius: BorderRadius.circular(4)),
-                        child: Text("v1.0.0 Stable", style: TextStyle(fontSize: 10, color: Colors.green.shade800, fontWeight: FontWeight.bold)),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(color: Colors.green.shade100, borderRadius: BorderRadius.circular(4)),
+                            child: Text("v3.0.0 Stable", style: TextStyle(fontSize: 10, color: Colors.green.shade800, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -260,7 +286,26 @@ class AboutMeScreen extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.all(20),
-            child: Text(_appDesc, style: TextStyle(color: Colors.grey[700], height: 1.5)),
+            child: Column(
+              children: [
+                Text(_appDesc, style: TextStyle(color: Colors.grey[700], height: 1.5)),
+                const SizedBox(height: 16),
+                // ✅ ADDED: View Source Code Button
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _launchUrl(_projectRepoUrl),
+                    icon: const Icon(FontAwesomeIcons.github, size: 16),
+                    label: const Text("View Source Code"),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.black87,
+                      side: BorderSide(color: Colors.grey.shade300),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -274,11 +319,11 @@ class AboutMeScreen extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade200)),
       child: Column(
         children: [
-          _buildTechTile(Icons.storage_rounded, "SQLite Database", "Offline-first architecture. All data stays on your device."),
+          _buildTechTile(Icons.storage_rounded, "SQLite Database", "Offline-first architecture. Data stays local."),
           const Divider(height: 1, indent: 20, endIndent: 20),
-          _buildTechTile(Icons.flutter_dash_rounded, "Flutter UI", "Component-based architecture for smooth performance."),
+          _buildTechTile(Icons.flutter_dash_rounded, "Flutter UI", "Built with a component-based architecture."),
           const Divider(height: 1, indent: 20, endIndent: 20),
-          _buildTechTile(Icons.share_rounded, "Smart Export", "Custom logic to generate formatted WhatsApp & HTML reports."),
+          _buildTechTile(Icons.share_rounded, "Smart Export", "Generates formatted WhatsApp & HTML reports."),
         ],
       ),
     );
@@ -298,7 +343,7 @@ class AboutMeScreen extends StatelessWidget {
   }
 }
 
-// --- Custom Clipper for the Curved Header ---
+// --- Custom Clipper ---
 class _HeaderClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {
@@ -313,7 +358,7 @@ class _HeaderClipper extends CustomClipper<Path> {
   bool shouldReclip(CustomClipper<Path> oldClipper) => false;
 }
 
-// --- Small Components ---
+// --- Components ---
 
 class _TechChip extends StatelessWidget {
   final String label;
@@ -325,13 +370,15 @@ class _TechChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        // ✅ Fixed Deprecation
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Text(
         label, 
-        style: TextStyle(color: color.withOpacity(1.0), fontSize: 12, fontWeight: FontWeight.w600),
+        // ✅ Fixed Deprecation (removed redundant withOpacity)
+        style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -354,7 +401,8 @@ class _SocialButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           shape: BoxShape.circle,
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 10, offset: const Offset(0, 4))],
+          // ✅ Fixed Deprecation
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 10, offset: const Offset(0, 4))],
         ),
         child: FaIcon(icon, color: color, size: 22),
       ),

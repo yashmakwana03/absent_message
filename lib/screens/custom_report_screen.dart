@@ -32,12 +32,14 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
 
   Future<void> _loadSubjects() async {
     final subs = await DatabaseHelper.instance.getAllSubjects();
-    setState(() {
-      _subjects = ['All', ...subs];
-    });
+    if (mounted) {
+      setState(() {
+        _subjects = ['All', ...subs];
+      });
+    }
   }
 
-  // --- 1. DATA GROUPING HELPER (Fixed Missing Method) ---
+  // --- 1. DATA GROUPING HELPER ---
   Map<String, Map<String, List<Map<String, dynamic>>>> _groupData() {
     Map<String, Map<String, List<Map<String, dynamic>>>> grouped = {};
     for (var row in _reportData) {
@@ -57,7 +59,6 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
     final config = CalendarDatePicker2WithActionButtonsConfig(
       calendarType: CalendarDatePicker2Type.multi,
       selectedDayHighlightColor: Colors.deepPurple,
-  
     );
 
     final values = await showCalendarDatePicker2Dialog(
@@ -95,10 +96,12 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
     List<String> formattedDates = _selectedDates.map((d) => DateFormat('yyyy-MM-dd').format(d)).toList();
     final data = await DatabaseHelper.instance.getLogsForSpecificDates(formattedDates, _selectedSubject);
 
-    setState(() {
-      _reportData = data;
-      _isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _reportData = data;
+        _isLoading = false;
+      });
+    }
   }
 
   // --- 3. WHATSAPP TEXT GENERATOR ---
@@ -126,7 +129,6 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
 
   // --- 4. HTML FILE GENERATOR ---
   String _generateHtmlReport() {
-    // Group by Subject first for HTML layout
     Map<String, Map<String, List<Map<String, dynamic>>>> groupedBySubj = {};
     for (var row in _reportData) {
       String subj = row['subject'];
@@ -200,30 +202,46 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
         for (var log in logs) {
            String absentees = log['absentees'];
            List<String> nums = absentees.split(',').where((e) => e.isNotEmpty).toList();
-           try { nums.sort((a,b) => int.parse(a).compareTo(int.parse(b))); } catch(e){}
+           
+           // --- FIX 1: ADDED COMMENT TO CATCH BLOCK ---
+           try { 
+             nums.sort((a,b) => int.parse(a).compareTo(int.parse(b))); 
+           } catch(e) {
+             // Ignore sort error for non-numeric rolls
+           }
+           
            String sortedAbsentees = nums.join(', ');
            String dept = log['deptName'];
-           String badgeColor = dept.toUpperCase().contains("CE") ? "indigo" : (dept.toUpperCase().contains("IT") ? "fuchsia" : "emerald");
+           
+           bool hasAbsentees = nums.isNotEmpty;
+           String statusColor = hasAbsentees ? "rose" : "emerald"; 
+           String statusLabel = hasAbsentees ? "Absentees" : "Status";
+           String displayContent = hasAbsentees ? sortedAbsentees : "All Present ✨";
+           String badgeText = hasAbsentees ? "Total: ${nums.length}" : "100%";
+           String copyButtonDisplay = hasAbsentees ? "block" : "hidden"; 
 
-           if (sortedAbsentees.isNotEmpty) {
-              html.writeln('''
-                <div class="number-container group">
-                    <div class="flex justify-between items-center mb-2">
-                        <span class="px-2.5 py-0.5 rounded-md bg-$badgeColor-100 text-$badgeColor-700 text-xs font-bold uppercase tracking-wide">$dept</span>
-                        <span class="text-xs font-medium text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">Total: ${nums.length}</span>
+           html.writeln('''
+            <div class="number-container group">
+                <div class="flex justify-between items-center mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 text-xs font-bold uppercase tracking-wide">$dept</span>
+                        <span class="text-xs font-semibold text-$statusColor-600">$statusLabel</span>
                     </div>
-                    <div class="relative flex items-center">
-                        <div class="w-full bg-slate-50 p-3 rounded-xl border border-slate-200 text-slate-700 font-mono text-sm leading-relaxed tracking-tight group-hover:border-$sectionColor-200 transition-colors">
-                            <span class="number-string">$sortedAbsentees</span>
-                        </div>
-                        <button class="copy-btn absolute right-2 p-2 bg-white rounded-lg shadow-sm border border-slate-200 text-slate-500 hover:text-$sectionColor-600 hover:border-$sectionColor-200 hover:bg-$sectionColor-50 transition-all duration-200">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                        </button>
-                    </div>
-                    <div class="feedback-message text-right text-xs font-medium text-$sectionColor-600 mt-1 h-0 overflow-hidden"></div>
+                    <span class="text-xs font-bold text-$statusColor-700 bg-$statusColor-50 px-2 py-0.5 rounded-full">$badgeText</span>
                 </div>
-              ''');
-           }
+                
+                <div class="relative flex items-center">
+                    <div class="w-full bg-$statusColor-50 p-3 rounded-xl border border-$statusColor-100 text-$statusColor-900 font-mono text-sm leading-relaxed tracking-tight">
+                        <span class="number-string">$displayContent</span>
+                    </div>
+                    
+                    <button class="$copyButtonDisplay copy-btn absolute right-2 p-2 bg-white rounded-lg shadow-sm border border-slate-200 text-slate-500 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition-all duration-200">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                    </button>
+                </div>
+                <div class="feedback-message text-right text-xs font-medium text-indigo-600 mt-1 h-0 overflow-hidden"></div>
+            </div>
+           ''');
         }
         html.writeln('</div></div>');
       });
@@ -260,10 +278,6 @@ document.addEventListener('DOMContentLoaded', () => {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Text Copied!")));
   }
 
-  Future<void> _shareText() async {
-     if (_reportData.isEmpty) return;
-     await Share.share(_generateTextReport());
-  }
 
   Future<void> _shareHtml() async {
     if (_reportData.isEmpty) return;
@@ -276,15 +290,16 @@ document.addEventListener('DOMContentLoaded', () => {
       await file.writeAsString(htmlContent);
       await Share.shareXFiles([XFile(file.path)], text: 'Attendance Report');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      // --- FIX 2: ADDED MOUNTED CHECK ---
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
     }
   }
 
   // --- 5. MAIN UI BUILD ---
   @override
   Widget build(BuildContext context) {
-    // Standard Theme Colors
-    final colorScheme = Theme.of(context).colorScheme;
     final primaryColor = Colors.deepPurple;
 
     return Scaffold(
@@ -303,12 +318,13 @@ document.addEventListener('DOMContentLoaded', () => {
             child: Column(
               children: [
                 DropdownButtonFormField<String>(
-                  initialValue: _selectedSubject,
+                  initialValue: _selectedSubject, 
                   decoration: const InputDecoration(
                     labelText: "Select Subject",
                     border: OutlineInputBorder(),
                     filled: true,
                     fillColor: Colors.white,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                   ),
                   items: _subjects.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
                   onChanged: (val) => setState(() => _selectedSubject = val!),
@@ -318,18 +334,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        "Selected: ${_selectedDates.length} Dates",
-                        style: TextStyle(fontWeight: FontWeight.bold, color: primaryColor),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("Date Range", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          Text(
+                            "${_selectedDates.length} Dates Selected",
+                            style: TextStyle(fontWeight: FontWeight.bold, color: primaryColor, fontSize: 16),
+                          ),
+                        ],
                       ),
                     ),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
                         foregroundColor: primaryColor,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: primaryColor)),
                       ),
-                      icon: const Icon(Icons.calendar_month),
-                      label: const Text("Select Dates"),
+                      icon: const Icon(Icons.calendar_month, size: 18),
+                      label: const Text("Pick Dates"),
                       onPressed: _pickDate,
                     )
                   ],
@@ -338,38 +362,46 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (_selectedDates.isNotEmpty)
                   Container(
                     height: 40,
-                    margin: const EdgeInsets.only(top: 10, bottom: 10),
+                    margin: const EdgeInsets.only(top: 12, bottom: 8),
                     child: ListView(
                       scrollDirection: Axis.horizontal,
                       children: _selectedDates.map((date) => Padding(
-                        padding: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.only(right: 8),
                         child: Chip(
                           label: Text(
                             DateFormat('dd/MM').format(date),
-                            style: const TextStyle(fontSize: 12),
+                            style: const TextStyle(fontSize: 12, color: Colors.white),
                           ),
-                          backgroundColor: Colors.white,
-                          deleteIconColor: Colors.red,
+                          // Use withValues instead of withOpacity
+                          backgroundColor: primaryColor.withValues(alpha: 0.8), 
+                          deleteIconColor: Colors.white70,
                           onDeleted: () => _removeDate(date),
-                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.all(0),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          side: BorderSide.none,
                         ),
                       )).toList(),
                     ),
                   ),
 
+                const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: primaryColor),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                     onPressed: _generateReport,
-                    child: const Text("Generate Report"),
+                    child: const Text("Generate Report", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   ),
                 ),
               ],
             ),
           ),
           
-          // --- PREVIEW AREA (Deep Purple UI) ---
+          // --- PREVIEW AREA ---
           Expanded(
             child: _isLoading 
               ? const Center(child: CircularProgressIndicator())
@@ -378,62 +410,55 @@ document.addEventListener('DOMContentLoaded', () => {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.assignment_outlined, size: 60, color: Colors.grey.shade300),
-                        const SizedBox(height: 10),
-                        const Text("Select dates and click Generate", style: TextStyle(color: Colors.grey)),
+                        Icon(Icons.description_outlined, size: 80, color: Colors.grey.shade200),
+                        const SizedBox(height: 16),
+                        Text(
+                          "No Data to Show",
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey.shade400),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          "Select dates & click Generate",
+                          style: TextStyle(fontSize: 14, color: Colors.grey.shade400),
+                        ),
                       ],
                     ),
                   )
                 : _buildGroupedList(), 
           ),
 
-          // --- BOTTOM ACTIONS (Deep Purple Theme) ---
+          // --- BOTTOM ACTIONS ---
           if (_reportData.isNotEmpty)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Colors.white,
-                boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4, offset: const Offset(0, -2))],
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -4))],
               ),
               child: Row(
                 children: [
-                   // Copy (Outlined Purple)
                    Expanded(
                     child: OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: primaryColor,
                         side: BorderSide(color: primaryColor),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                       icon: const Icon(Icons.copy, size: 18),
-                      label: const Text("Copy"),
+                      label: const Text("Copy Text"),
                       onPressed: _copyText,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  
-                  // Share Text (Filled Purple)
+                  const SizedBox(width: 12),
                   Expanded(
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
-                        backgroundColor: primaryColor,
+                        backgroundColor: Colors.teal,
                         foregroundColor: Colors.white,
-                      ),
-                      icon: const Icon(Icons.share, size: 18),
-                      label: const Text("Text"),
-                      onPressed: _shareText,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  
-                  // Share HTML (Light Purple)
-                  Expanded(
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.deepPurple.shade100,
-                        foregroundColor: Colors.deepPurple.shade900,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                       icon: const Icon(Icons.html, size: 18),
-                      label: const Text("HTML"),
+                      label: const Text("Share HTML"),
                       onPressed: _shareHtml,
                     ),
                   ),
@@ -460,28 +485,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return Card(
           elevation: 2,
-          margin: const EdgeInsets.only(bottom: 20),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          clipBehavior: Clip.antiAlias,
+          margin: const EdgeInsets.only(bottom: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade100)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Date Header
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                color: Colors.deepPurple,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.shade50,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      DateFormat('EEEE, dd MMMM yyyy').format(dt),
+                      DateFormat('EEEE, dd MMM yyyy').format(dt),
                       style: const TextStyle(
-                        color: Colors.white, 
+                        color: Colors.deepPurple, 
                         fontWeight: FontWeight.bold,
-                        fontSize: 15
+                        fontSize: 14
                       ),
                     ),
-                    const Icon(Icons.calendar_today, color: Colors.white70, size: 16),
+                    const Icon(Icons.calendar_today, color: Colors.deepPurple, size: 16),
                   ],
                 ),
               ),
@@ -497,7 +524,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: Colors.grey.shade200),
                       ),
@@ -510,9 +537,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             child: Text(
                               subject,
                               style: const TextStyle(
-                                color: Colors.deepPurple,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 15,
                               ),
                             ),
                           ),
@@ -526,36 +553,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
                             return Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              child: Row(
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // Dept Tag
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: Colors.deepPurple.shade50,
+                                      color: Colors.grey.shade100,
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
                                       dept,
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                        color: Colors.deepPurple.shade800,
+                                        fontSize: 11,
+                                        color: Colors.grey.shade800,
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: 10),
-                                  
-                                  // Numbers
-                                  Expanded(
-                                    child: Text(
-                                      hasAbsentees ? absentees : "No Absentees",
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        height: 1.4,
-                                        color: hasAbsentees ? Colors.black87 : Colors.green,
-                                      ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    hasAbsentees ? absentees : "All Present",
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      height: 1.4,
+                                      color: hasAbsentees ? Colors.black87 : Colors.green,
+                                      fontFamily: hasAbsentees ? 'monospace' : null, 
                                     ),
                                   ),
                                 ],

@@ -34,7 +34,8 @@ class BackupScreen extends StatelessWidget {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: primaryColor.withOpacity(0.2),
+                      // ✅ Fixed Deprecation
+                      color: primaryColor.withValues(alpha: 0.2),
                       blurRadius: 15,
                       offset: const Offset(0, 5),
                     )
@@ -80,6 +81,8 @@ class BackupScreen extends StatelessWidget {
                 // Button 2: Save Locally
                 OutlinedButton.icon(
                   onPressed: () async {
+                    // Note: If this only asks for path once, check your DatabaseHelper logic.
+                    // It might be saving the path to SharedPreferences.
                     String? path = await DatabaseHelper.instance.saveDatabaseLocally();
                     if (context.mounted && path != null) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -110,7 +113,7 @@ class BackupScreen extends StatelessWidget {
               context,
               title: "Restore Data",
               icon: Icons.settings_backup_restore,
-              color: Colors.red.shade700, // Red specifically for danger zone
+              color: Colors.red.shade700, 
               isDangerZone: true,
               children: [
                 const Text(
@@ -125,7 +128,7 @@ class BackupScreen extends StatelessWidget {
                   icon: const Icon(Icons.download),
                   label: const Text("Restore from File"),
                   style: FilledButton.styleFrom(
-                    backgroundColor: Colors.red.shade700, // Warning Color
+                    backgroundColor: Colors.red.shade700, 
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
@@ -201,7 +204,8 @@ class BackupScreen extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
+                    // ✅ Fixed Deprecation
+                    color: color.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(icon, color: color),

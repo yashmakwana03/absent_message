@@ -14,8 +14,8 @@ class LectureState {
   final String faculty;
   final String time;
   final bool isElective;
-  final int primaryDeptId;
-  final Set<int> relevantDeptIds; // Which Dept Boxes to show
+  final Set<int> relevantDeptIds;
+  final String? error;
 
   final Map<int, TextEditingController> controllers = {};
   final Map<int, bool> isDirectMode = {};
@@ -26,9 +26,9 @@ class LectureState {
     required this.faculty,
     required this.time,
     required this.isElective,
-    required this.primaryDeptId,
     required this.relevantDeptIds,
     required List<Department> departments,
+    this.error,
   }) {
     for (var deptId in relevantDeptIds) {
       controllers[deptId] = TextEditingController();
@@ -57,6 +57,10 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
   bool _isLoading = true;
   Timer? _debounce;
 
+  // --- LANGUAGE SETTINGS (Default: English Only) ---
+  bool _showEnglish = true;
+  bool _showGujarati = false;
+
   @override
   void initState() {
     super.initState();
@@ -84,6 +88,8 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
     String dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
 
     for (var lecture in _lectureStates) {
+      if (lecture.error != null) continue;
+
       for (var deptId in lecture.relevantDeptIds) {
         String input = lecture.controllers[deptId]?.text ?? "";
         if (input.trim().isEmpty) continue;
@@ -107,8 +113,8 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
 
     if (hasData && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
+        const SnackBar(
+          content: Row(
             children: [
               Icon(Icons.check_circle, color: Colors.white),
               SizedBox(width: 10),
@@ -138,42 +144,33 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
     await _loadLecturesForDate();
   }
 
-  // --- CORE LOGIC UPDATE HERE ---
   Future<void> _loadLecturesForDate() async {
     setState(() => _isLoading = true);
     _dayName = DateFormat('EEEE').format(_selectedDate);
 
-    List<Map<String, dynamic>> lectures = await DatabaseHelper.instance
-        .getLecturesByDay(_dayName);
+    List<Map<String, dynamic>> lectures =
+        await DatabaseHelper.instance.getLecturesByDay(_dayName);
     _lectureStates = [];
 
     for (var l in lectures) {
       int id = l['id'];
       bool isElective = l['isElective'] == 1;
-      int primaryDeptId = l['deptId'];
 
       Set<int> relevantDepts = {};
+      String? errorMessage;
 
       if (!isElective) {
-        // CASE 1: NOT ELECTIVE (Unchecked Box)
-        // Rule: Show BOTH (All) Departments.
-        // This assumes the class is mixed (CE + IT) by default.
         for (var d in _departments) {
           relevantDepts.add(d.id!);
         }
       } else {
-        // CASE 2: IS ELECTIVE (Checked Box)
-        // Rule: Show ONLY Selected Departments from Enrollment.
-        final enrolledIds = await DatabaseHelper.instance.getEnrolledStudentIds(
-          id,
-        );
+        final enrolledIds =
+            await DatabaseHelper.instance.getEnrolledStudentIds(id);
         final enrolledSet = enrolledIds.toSet();
 
         if (enrolledSet.isEmpty) {
-          // Safety: If checked but no one enrolled yet, show Host Dept so user isn't stuck
-          relevantDepts.add(primaryDeptId);
+          errorMessage = "No students enrolled. Manage Electives to add.";
         } else {
-          // Check which departments the enrolled students belong to
           _studentCache.forEach((deptId, students) {
             if (students.any((s) => enrolledSet.contains(s['id']))) {
               relevantDepts.add(deptId);
@@ -189,9 +186,9 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
           faculty: l['faculty'],
           time: l['timeSlot'],
           isElective: isElective,
-          primaryDeptId: primaryDeptId,
           relevantDeptIds: relevantDepts,
           departments: _departments,
+          error: errorMessage,
         ),
       );
     }
@@ -205,14 +202,15 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
 
   Future<void> _loadExistingDataFromDB() async {
     String dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
-    final existingLogs = await DatabaseHelper.instance.getAttendanceLogs(
-      date: dateStr,
-    );
+    final existingLogs =
+        await DatabaseHelper.instance.getAttendanceLogs(date: dateStr);
 
     for (var log in existingLogs) {
       for (var lecture in _lectureStates) {
         if (lecture.title == log['subject'] &&
             lecture.time == log['timeSlot']) {
+          if (lecture.error != null) continue;
+
           String deptName = log['deptName'];
           var dept = _departments.firstWhere(
             (d) => d.name == deptName,
@@ -231,25 +229,28 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
     final prefs = await SharedPreferences.getInstance();
     String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
     for (var lecture in _lectureStates) {
+      if (lecture.error != null) continue;
       for (var deptId in lecture.relevantDeptIds) {
         String baseKey = "draft_${dateKey}_${lecture.lectureId}_$deptId";
         await prefs.setString(
           "${baseKey}_text",
           lecture.controllers[deptId]!.text,
         );
-        await prefs.setBool("${baseKey}_mode", lecture.isDirectMode[deptId]!);
+        await prefs.setBool(
+            "${baseKey}_mode", lecture.isDirectMode[deptId]!);
       }
     }
-    if (!silent && mounted)
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Draft saved!')));
+    if (!silent && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Draft saved!')));
+    }
   }
 
   Future<void> _loadDraft() async {
     final prefs = await SharedPreferences.getInstance();
     String dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate);
     for (var lecture in _lectureStates) {
+      if (lecture.error != null) continue;
       for (var deptId in lecture.relevantDeptIds) {
         String baseKey = "draft_${dateKey}_${lecture.lectureId}_$deptId";
         String? savedText = prefs.getString("${baseKey}_text");
@@ -275,25 +276,19 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
 
     List<String> validClassList = [];
 
-    // --- Validation Logic ---
     if (lecture.isElective) {
-      // Strict: Only Enrolled Students
-      final enrolledIds = await DatabaseHelper.instance.getEnrolledStudentIds(
-        lecture.lectureId,
-      );
+      final enrolledIds =
+          await DatabaseHelper.instance.getEnrolledStudentIds(lecture.lectureId);
       final enrolledSet = enrolledIds.toSet();
       final allStudentsInDept = _studentCache[deptId] ?? [];
-
       validClassList = allStudentsInDept
           .where((s) => enrolledSet.contains(s['id']))
           .map((s) => s['rollNumber'].toString())
           .toList();
     } else {
-      // Default: ALL students in Dept (since unchecked means mixed class)
       final allStudents = _studentCache[deptId] ?? [];
-      validClassList = allStudents
-          .map((s) => s['rollNumber'].toString())
-          .toList();
+      validClassList =
+          allStudents.map((s) => s['rollNumber'].toString()).toList();
     }
 
     if (isDirectMode) {
@@ -317,52 +312,153 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
 
     try {
       rollList.sort((a, b) {
-        return int.parse(
-          a.replaceAll(RegExp(r'[^0-9]'), ''),
-        ).compareTo(int.parse(b.replaceAll(RegExp(r'[^0-9]'), '')));
+        return int.parse(a.replaceAll(RegExp(r'[^0-9]'), ''))
+            .compareTo(int.parse(b.replaceAll(RegExp(r'[^0-9]'), '')));
       });
-    } catch (e) {
-      /* ignore */
-    }
+    } catch (e) { /* ignore */ }
 
     return rollList
         .map((roll) => "$roll - ${nameMap[roll] ?? "Unknown"}")
         .join('\n');
   }
 
+  // --- LANGUAGE SELECTION DIALOG ---
+  void _openLanguageDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        bool localEng = _showEnglish;
+        bool localGuj = _showGujarati;
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text("Select Output Language"),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CheckboxListTile(
+                    title: const Text("English Header"),
+                    value: localEng,
+                    activeColor: Colors.deepPurple,
+                    onChanged: (val) {
+                      setState(() => localEng = val!);
+                    },
+                  ),
+                  CheckboxListTile(
+                    title: const Text("Gujarati Header"),
+                    value: localGuj,
+                    activeColor: Colors.deepPurple,
+                    onChanged: (val) {
+                      setState(() => localGuj = val!);
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel"),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    this.setState(() {
+                      _showEnglish = localEng;
+                      _showGujarati = localGuj;
+                    });
+                    _generateMessage();
+                    Navigator.pop(context);
+                  },
+                  child: const Text("Apply"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // --- NEW: VIEW FULL REPORT DIALOG ---
+  void _showFullReportDialog() {
+    if (_outputController.text.isEmpty) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("Preview Report"),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Text(
+                _outputController.text,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 15),
+              ),
+            ),
+          ),
+          actions: [
+             TextButton.icon(
+              icon: const Icon(Icons.copy),
+              label: const Text("Copy"),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: _outputController.text));
+                 ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Copied!')));
+                Navigator.pop(context);
+              },
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Close"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // --- MODIFIED MESSAGE GENERATION LOGIC ---
   Future<void> _generateMessage() async {
+    if (!_showEnglish && !_showGujarati) {
+      setState(() => _outputController.text = "");
+      return;
+    }
+
     final formattedDate = DateFormat('dd-MM-yyyy').format(_selectedDate);
     final gujaratiDays = {
-      "Monday": "સોમવાર",
-      "Tuesday": "મંગળવાર",
-      "Wednesday": "બુધવાર",
-      "Thursday": "ગુરુવાર",
-      "Friday": "શુક્રવાર",
-      "Saturday": "શનિવાર",
-      "Sunday": "રવિવાર",
+      "Monday": "સોમવાર", "Tuesday": "મંગળવાર", "Wednesday": "બુધવાર",
+      "Thursday": "ગુરુવાર", "Friday": "શુક્રવાર", "Saturday": "શનિવાર", "Sunday": "રવિવાર",
     };
 
     StringBuffer buffer = StringBuffer();
-    buffer.writeln(
-      "આજે $formattedDate (${gujaratiDays[_dayName] ?? _dayName}) ના રોજ ગેરહાજર રહેલા વિદ્યાર્થીઓની યાદી નીચે મુજબ છે",
-    );
-    buffer.writeln(
-      "Following is the list of students who remained absent today $formattedDate ($_dayName)\n",
-    );
 
-    if (_lectureStates.isEmpty) buffer.writeln("No lectures scheduled.");
+    // 1. ADD HEADERS (Based on Selection - Stacking them)
+    if (_showGujarati) {
+      buffer.writeln("આજે $formattedDate (${gujaratiDays[_dayName] ?? _dayName}) ના રોજ ગેરહાજર રહેલા વિદ્યાર્થીઓની યાદી નીચે મુજબ છે");
+    }
+    if (_showEnglish) {
+      buffer.writeln("Following is the list of students who remained absent today $formattedDate ($_dayName)");
+    }
+    
+    // Add a blank line after headers
+    buffer.writeln();
 
+    if (_lectureStates.isEmpty) {
+      buffer.writeln("No lectures scheduled.");
+    }
+
+    // 2. ADD BODY (Common List for all)
     for (var lecture in _lectureStates) {
+      if (lecture.error != null) continue;
+
       bool hasAbsenteesForLecture = false;
       StringBuffer lectureBuffer = StringBuffer();
 
-      lectureBuffer.writeln(
-        "*${lecture.title} - ${lecture.faculty} (${lecture.time})*\n",
-      );
+      lectureBuffer.writeln("*${lecture.title} - ${lecture.faculty} (${lecture.time})*\n");
 
       for (var deptId in lecture.relevantDeptIds) {
         String deptName = _departments.firstWhere((d) => d.id == deptId).name;
-
         String input = lecture.controllers[deptId]?.text ?? "";
         if (input.trim().isEmpty) continue;
 
@@ -386,15 +482,15 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
         buffer.write(lectureBuffer.toString());
       }
     }
+
     setState(() => _outputController.text = buffer.toString());
   }
 
   void _copyToClipboard() {
     if (_outputController.text.isEmpty) _generateMessage();
     Clipboard.setData(ClipboardData(text: _outputController.text));
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Copied to Clipboard!')));
+    ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Copied to Clipboard!')));
   }
 
   Future<void> _shareToWhatsApp() async {
@@ -404,10 +500,10 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
     try {
       await launchUrl(Uri.parse(urlString));
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not launch WhatsApp')),
-        );
+            const SnackBar(content: Text('Could not launch WhatsApp')));
+      }
     }
   }
 
@@ -420,6 +516,11 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
       appBar: AppBar(
         title: const Text('Daily Report'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.language),
+            tooltip: "Select Language",
+            onPressed: _openLanguageDialog,
+          ),
           IconButton(
             icon: const Icon(Icons.calendar_month),
             onPressed: () async {
@@ -442,6 +543,7 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                // Header Information
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -455,6 +557,14 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
                       DateFormat('MMMM dd, yyyy').format(_selectedDate),
                       style: textTheme.titleMedium?.copyWith(
                         color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4.0),
+                      child: Text(
+                        "Language: ${(_showEnglish && _showGujarati) ? "Both" : (_showEnglish ? "English" : "Gujarati")}",
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.deepPurple.shade300),
                       ),
                     ),
                   ],
@@ -481,17 +591,38 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
                   ),
                 ),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
+                
+                // --- PREVIEW BUTTON ROW ---
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      "Generated Output",
+                      style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.visibility_outlined),
+                      label: const Text("View Full Report"),
+                      onPressed: _showFullReportDialog,
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.deepPurple,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+
+                // --- TEXT BOX ---
                 TextField(
                   controller: _outputController,
                   maxLines: 6,
-                  readOnly: true,
+                  readOnly: true, // Only for copying
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
                   decoration: InputDecoration(
                     filled: true,
-                    fillColor: colorScheme.surfaceContainerHighest.withOpacity(
-                      0.5,
-                    ),
+                    fillColor:
+                        colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none,
@@ -513,7 +644,7 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
                     Expanded(
                       child: FilledButton.icon(
                         icon: const Icon(Icons.share),
-                        label: const Text("WhatsApp"),
+                        label: const Text("Text WhatsApp"),
                         onPressed: _shareToWhatsApp,
                       ),
                     ),
@@ -531,10 +662,13 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
+                      elevation: 3, // Added a little shadow to make it look "saveable"
                     ),
-                    icon: const Icon(Icons.check_circle),
+                    // CHANGED ICON to 'save' to indicate storage
+                    icon: const Icon(Icons.save), 
+                    // CHANGED TEXT to be clearer
                     label: const Text(
-                      "Submit Attendance",
+                      "Save to History", 
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -543,14 +677,26 @@ class _ReportGeneratorScreenV3State extends State<ReportGeneratorScreenV3> {
                     onPressed: _submitAttendance,
                   ),
                 ),
+                
+                // Add a small helper text below to explain
+                const Padding(
+                  padding: EdgeInsets.only(top: 8.0),
+                  child: Center(
+                    child: Text(
+                      "Saves data for reports , backup & share",
+                      style: TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ),
+                ),
+                
                 const SizedBox(height: 40),
               ],
-            ),
+            ),  
     );
   }
 }
 
-// --- LectureCard UI ---
+// --- LectureCard UI (UNCHANGED) ---
 class LectureCard extends StatefulWidget {
   final LectureState lecture;
   final List<Department> departments;
@@ -576,7 +722,6 @@ class _LectureCardState extends State<LectureCard> {
   @override
   void initState() {
     super.initState();
-    // Only verify counts for relevant departments
     for (var deptId in widget.lecture.relevantDeptIds) {
       _updateCount(deptId, widget.lecture.controllers[deptId]?.text ?? "");
     }
@@ -606,9 +751,8 @@ class _LectureCardState extends State<LectureCard> {
     final List<String> outOfBounds = [];
 
     final studentList = widget.studentCache[deptId] ?? [];
-    final validRollNumbers = studentList
-        .map((s) => s['rollNumber'].toString())
-        .toSet();
+    final validRollNumbers =
+        studentList.map((s) => s['rollNumber'].toString()).toSet();
 
     for (var part in rawParts) {
       part = part.trim();
@@ -638,8 +782,45 @@ class _LectureCardState extends State<LectureCard> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    // --- DISPLAY LOGIC ---
-    // Only show departments that are in the relevant list calculated in _loadLecturesForDate
+    if (widget.lecture.error != null) {
+      return Card(
+        margin: const EdgeInsets.only(bottom: 16),
+        color: Colors.red.shade50,
+        shape: RoundedRectangleBorder(
+          side: BorderSide(color: Colors.red.shade200),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "${widget.lecture.title} (${widget.lecture.time})",
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.red.shade700),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.lecture.error!,
+                      style: TextStyle(color: Colors.red.shade900),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     List<Department> visibleDepartments = widget.departments
         .where((d) => widget.lecture.relevantDeptIds.contains(d.id))
         .toList();
@@ -712,8 +893,6 @@ class _LectureCardState extends State<LectureCard> {
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 8),
-
-            // DYNAMIC INPUT LIST
             ...visibleDepartments.map((dept) {
               bool isDirect = widget.lecture.isDirectMode[dept.id]!;
               String? errorText = _errors[dept.id];

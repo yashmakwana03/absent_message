@@ -43,8 +43,13 @@ class DailyReportScreen extends StatefulWidget {
 class _DailyReportScreenState extends State<DailyReportScreen> {
   DateTime _selectedDate = DateTime.now();
   bool _isLoading = true;
+  
+  // Stats
   int _totalAbsent = 0;
+  int _totalPresent = 0;   
+  int _totalStrength = 0;  
   double _dayAttendancePercent = 0.0;
+  
   List<LectureSlot> _lectureData = [];
 
   @override
@@ -95,20 +100,21 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
     
     // Summary Stats
     sb.writeln("*Overview*");
+    sb.writeln("- Total Present: $_totalPresent / $_totalStrength"); // ✅ Updated Share Text
     sb.writeln("- Total Absent: $_totalAbsent");
-    sb.writeln("- Attendance: ${(_dayAttendancePercent * 100).toStringAsFixed(1)}%\n");
+    sb.writeln("- Percentage: ${(_dayAttendancePercent * 100).toStringAsFixed(1)}%\n");
 
     sb.writeln("--------------------------------\n");
 
     // Lecture Details
     for (var lecture in _lectureData) {
       sb.writeln("*${lecture.title}*");
-      sb.writeln("Present: ${lecture.presentCount} | Absent: ${lecture.absentCount}");
+      // ✅ Updated Share Text for Lecture
+      sb.writeln("Present: ${lecture.presentCount}/${lecture.totalStrength} | Absent: ${lecture.absentCount}");
       
       if (lecture.absentStudents.isEmpty) {
         sb.writeln("_All Present_");
       } else {
-        // Group by Dept for cleaner list
         Map<String, List<String>> deptMap = {};
         for(var s in lecture.absentStudents) {
           if(!deptMap.containsKey(s.department)) deptMap[s.department] = [];
@@ -119,26 +125,23 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
           sb.writeln("- $dept : ${rolls.join(', ')}");
         });
       }
-      sb.writeln(""); // Empty line between lectures
+      sb.writeln(""); 
     }
     
     await Share.share(sb.toString());
   }
 
-  // --- CORE DATA FETCHING (Fixed for Electives) ---
+  // --- CORE DATA FETCHING ---
   Future<void> _fetchData() async {
     setState(() => _isLoading = true);
     try {
       final db = await DatabaseHelper.instance.database;
       
-      // 1. Fetch Students
       final allStudents = await DatabaseHelper.instance.readAllStudentsWithDeptName();
       
-      // 2. Fetch Elective Info
       final lectureRows = await db.query('Lecture');
       final enrollmentRows = await db.query('SubjectEnrollment');
 
-      // Helper Map: "Subject_Time" -> {id, isElective}
       Map<String, Map<String, dynamic>> lectureInfoMap = {}; 
       for(var row in lectureRows) {
         String key = "${row['subject']}_${row['timeSlot']}";
@@ -148,12 +151,10 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
         };
       }
       
-      // Helper Set: "LectureID_StudentID" -> Exists
       Set<String> enrollments = enrollmentRows.map((e) => "${e['lectureId']}_${e['studentId']}").toSet();
 
-      // 3. Prepare Lookups
-      Map<String, String> studentNames = {}; // "DeptId_Roll" -> Name
-      Map<int, int> deptTotalStrength = {}; // DeptId -> Count of all students
+      Map<String, String> studentNames = {}; 
+      Map<int, int> deptTotalStrength = {}; 
       
       for (var s in allStudents) {
         int dId = s['deptId'];
@@ -161,7 +162,6 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
         deptTotalStrength[dId] = (deptTotalStrength[dId] ?? 0) + 1;
       }
 
-      // 4. Get Logs for Date
       String dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
       final logs = await DatabaseHelper.instance.getAttendanceLogs(date: dateStr);
 
@@ -172,12 +172,10 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       for (var log in logs) {
         String deptName = log['deptName'];
         
-        // Find Dept ID from Name
         int deptId = 0;
         var matchingStudent = allStudents.firstWhere((s) => s['departmentName'] == deptName, orElse: () => {});
         if (matchingStudent.isNotEmpty) deptId = matchingStudent['deptId'];
 
-        // --- CALCULATE TOTAL STRENGTH (The Fix) ---
         int totalStrength = 0;
         
         String key = "${log['subject']}_${log['timeSlot']}";
@@ -186,10 +184,8 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
         int lectureId = info?['id'] ?? 0;
 
         if (!isElective) {
-           // Normal Class: Strength = All students in Dept
            totalStrength = deptTotalStrength[deptId] ?? 0;
         } else {
-           // Elective: Strength = Only Enrolled students in Dept
            var studentsInDept = allStudents.where((s) => s['deptId'] == deptId);
            for(var s in studentsInDept) {
               if (enrollments.contains("${lectureId}_${s['id']}")) {
@@ -197,13 +193,11 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
               }
            }
         }
-        // -------------------------------------------
 
         String absenteesStr = log['absentees'] ?? "";
         List<String> absList = absenteesStr.split(',').where((s) => s.trim().isNotEmpty).toList();
         
         int absentCount = absList.length;
-        // Ensure present count doesn't go negative if data is messy
         int presentCount = (totalStrength - absentCount).clamp(0, totalStrength);
 
         List<AbsentStudentUi> absentUiList = [];
@@ -233,6 +227,8 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       if (mounted) {
         setState(() {
           _totalAbsent = (dayTotalStudents - dayTotalPresent);
+          _totalPresent = dayTotalPresent; // ✅ Store Present
+          _totalStrength = dayTotalStudents; // ✅ Store Total Strength
           _dayAttendancePercent = dayPercent;
           _lectureData = lectures;
           _isLoading = false;
@@ -300,7 +296,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
                 children: [
                   Expanded(
                     child: _buildStatCard(
-                      title: "Total Absent",
+                      title: "Absent Students",
                       value: _totalAbsent.toString(),
                       icon: Icons.person_off,
                       color: Colors.redAccent,
@@ -310,9 +306,9 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
                   const SizedBox(width: 16),
                   Expanded(
                     child: _buildStatCard(
-                      title: "Attendance",
-                      value: "${(_dayAttendancePercent * 100).toStringAsFixed(1)}%",
-                      icon: Icons.pie_chart,
+                      title: "Present / Total", // ✅ Title Changed
+                      value: "$_totalPresent / $_totalStrength", // ✅ Shows "45 / 60"
+                      icon: Icons.check_circle,
                       color: Colors.green,
                       bgColor: Colors.green.shade50,
                     ),
@@ -349,7 +345,8 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+        // ✅ Fixed Deprecation: used withValues() instead of withOpacity()
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -360,9 +357,13 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
             child: Icon(icon, color: color, size: 24),
           ),
           const SizedBox(height: 16),
-          Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.grey[800])),
+          // Scale text if numbers get large
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.grey[800])),
+          ),
           const SizedBox(height: 4),
-          Text(title, style: TextStyle(fontSize: 14, color: Colors.grey[500], fontWeight: FontWeight.w500)),
+          Text(title, style: TextStyle(fontSize: 13, color: Colors.grey[500], fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -409,15 +410,18 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
           ),
           title: Text(slot.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           
-          // --- UPDATED SUBTITLE: Shows Present & Absent ---
+          // --- UPDATED SUBTITLE: Shows Present / Total for specific lecture ---
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 4.0),
             child: Row(
               children: [
                 Icon(Icons.check_circle_outline, size: 14, color: Colors.green[700]),
                 const SizedBox(width: 4),
-                Text("Present: ${slot.presentCount}", style: TextStyle(color: Colors.green[700], fontSize: 13, fontWeight: FontWeight.w500)),
+                // ✅ Shows: Present: 45 / 60
+                Text("Present: ${slot.presentCount} / ${slot.totalStrength}", style: TextStyle(color: Colors.green[700], fontSize: 13, fontWeight: FontWeight.w500)),
+                
                 const SizedBox(width: 12),
+                
                 Icon(Icons.cancel_outlined, size: 14, color: Colors.red[700]),
                 const SizedBox(width: 4),
                 Text("Absent: ${slot.absentCount}", style: TextStyle(color: Colors.red[700], fontSize: 13, fontWeight: FontWeight.w500)),

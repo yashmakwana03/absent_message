@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../database/database_helper.dart'; // Check your path
+import '../database/database_helper.dart'; 
 import '../models/department.dart';
 import '../models/student.dart';
 
@@ -12,18 +12,18 @@ class ManageEnrollmentScreen extends StatefulWidget {
 
 class _ManageEnrollmentScreenState extends State<ManageEnrollmentScreen> {
   // Selection States
-  String? _selectedSubjectName; // CHANGED: We now select by NAME, not ID
+  String? _selectedSubjectName;
   int? _selectedDeptId;
 
   // Data Lists
-  List<Map<String, dynamic>> _allElectiveRows = []; // Keep all rows for reference
-  List<String> _uniqueSubjects = []; // For the dropdown
+  List<Map<String, dynamic>> _allElectiveRows = [];
+  List<String> _uniqueSubjects = [];
   List<Department> _departments = [];
   List<Student> _students = [];
   
   // Tracking Enrollment
-  Set<int> _enrolledStudentIds = {}; // IDs currently in DB
-  Set<int> _tempSelectedIds = {}; // IDs checked on UI
+  Set<int> _enrolledStudentIds = {};
+  Set<int> _tempSelectedIds = {};
   bool _isLoading = false;
 
   @override
@@ -35,13 +35,10 @@ class _ManageEnrollmentScreenState extends State<ManageEnrollmentScreen> {
   Future<void> _loadInitialData() async {
     setState(() => _isLoading = true);
     
-    // 1. Get All Elective Lectures
     final electives = await DatabaseHelper.instance.getElectiveLectures();
     
-    // 2. Extract UNIQUE Subject Names
-    // (e.g. if we have 3 "Java" lectures, we only want "Java" once in the list)
     final uniqueNames = electives.map((e) => e['subject'] as String).toSet().toList();
-    uniqueNames.sort(); // Alphabetical order
+    uniqueNames.sort();
 
     final depts = await DatabaseHelper.instance.readAllDepartments();
     
@@ -51,7 +48,6 @@ class _ManageEnrollmentScreenState extends State<ManageEnrollmentScreen> {
       _departments = depts;
       _isLoading = false;
       
-      // Auto-select first options
       if (_uniqueSubjects.isNotEmpty) _selectedSubjectName = _uniqueSubjects.first;
       if (_departments.isNotEmpty) _selectedDeptId = _departments.first.id;
     });
@@ -66,19 +62,24 @@ class _ManageEnrollmentScreenState extends State<ManageEnrollmentScreen> {
 
     setState(() => _isLoading = true);
 
-    // 1. Get All Students in the selected Department
+    // 1. Get Students
     final students = await DatabaseHelper.instance.readStudentsByDept(_selectedDeptId!);
     
-    // 2. Find ALL Lecture IDs that match this Subject Name
-    // (e.g. Find ID for Mon Java, Wed Java, Fri Java)
+    // --- SORTING LOGIC: NUMERIC ---
+    students.sort((a, b) {
+      // Extract numbers from roll string (e.g. "25" from "25" or "92001" from "92001")
+      int aNum = int.tryParse(a.rollNumber.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      int bNum = int.tryParse(b.rollNumber.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      return aNum.compareTo(bNum);
+    });
+
+    // 2. Find matching lecture IDs
     final matchingLectureIds = _allElectiveRows
         .where((e) => e['subject'] == _selectedSubjectName)
         .map((e) => e['id'] as int)
         .toList();
 
-    // 3. Get currently enrolled IDs for ANY of these lectures
-    // We just need to check the first one, assuming they are synced. 
-    // But to be safe, we check all and merge them.
+    // 3. Get enrolled IDs
     Set<int> enrolledSet = {};
     for (var id in matchingLectureIds) {
       final list = await DatabaseHelper.instance.getEnrolledStudentIds(id);
@@ -89,7 +90,6 @@ class _ManageEnrollmentScreenState extends State<ManageEnrollmentScreen> {
       _students = students;
       _enrolledStudentIds = enrolledSet;
       
-      // Pre-fill the UI checkboxes
       _tempSelectedIds = _students
           .where((s) => _enrolledStudentIds.contains(s.id))
           .map((s) => s.id!)
@@ -99,7 +99,6 @@ class _ManageEnrollmentScreenState extends State<ManageEnrollmentScreen> {
     });
   }
 
-  // --- SAVE LOGIC (THE FIX) ---
   Future<void> _saveChanges() async {
     if (_selectedSubjectName == null) return;
 
@@ -108,7 +107,6 @@ class _ManageEnrollmentScreenState extends State<ManageEnrollmentScreen> {
     List<int> toAdd = [];
     List<int> toRemove = [];
 
-    // Calculate changes
     for (var student in _students) {
       bool isSelected = _tempSelectedIds.contains(student.id);
       bool wasEnrolled = _enrolledStudentIds.contains(student.id);
@@ -120,8 +118,6 @@ class _ManageEnrollmentScreenState extends State<ManageEnrollmentScreen> {
       }
     }
 
-    // --- MAGIC HAPPENS HERE ---
-    // Instead of updating just one ID, we find ALL lectures with this name
     final matchingLectureIds = _allElectiveRows
         .where((e) => e['subject'] == _selectedSubjectName)
         .map((e) => e['id'] as int)
@@ -138,53 +134,63 @@ class _ManageEnrollmentScreenState extends State<ManageEnrollmentScreen> {
         SnackBar(
           content: Text("Updated $updatedCount batches of '$_selectedSubjectName'!"),
           backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
         ),
       );
-      // Refresh to ensure sync
       await _fetchStudentsAndEnrollment();
     }
   }
 
-  // --- SHORTCUT ---
-  void _selectRangeDialog() {
-    final TextEditingController startCtrl = TextEditingController();
-    final TextEditingController endCtrl = TextEditingController();
+  // --- SHORTCUT: COMMA LIST ---
+  void _selectByListDialog() {
+    final TextEditingController listCtrl = TextEditingController();
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Select by Roll No Range"),
+        title: const Text("Select by List"),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Enter numeric part (e.g. 1 to 32)"),
-            TextField(controller: startCtrl, decoration: const InputDecoration(labelText: "Start"), keyboardType: TextInputType.number),
-            TextField(controller: endCtrl, decoration: const InputDecoration(labelText: "End"), keyboardType: TextInputType.number),
+            const Text("Enter numbers separated by comma.", style: TextStyle(fontSize: 13, color: Colors.grey)),
+            const Text("Example: 1, 5, 12, 33", style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: listCtrl,
+              decoration: const InputDecoration(
+                labelText: "Roll Numbers",
+                border: OutlineInputBorder(),
+                hintText: "1, 2, 5...",
+              ),
+              keyboardType: TextInputType.number,
+              maxLines: 2,
+            ),
           ],
         ),
         actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
           ElevatedButton(
             onPressed: () {
-              int? start = int.tryParse(startCtrl.text);
-              int? end = int.tryParse(endCtrl.text);
-              if (start != null && end != null) {
+              String text = listCtrl.text;
+              if (text.isNotEmpty) {
+                // Parse "1, 5, 10" -> Set {1, 5, 10}
+                Set<int> targetRolls = text.split(',')
+                    .map((e) => int.tryParse(e.trim()) ?? -1)
+                    .where((e) => e != -1)
+                    .toSet();
+                
                 setState(() {
                   for (var s in _students) {
+                    // Get numeric part of student roll no
                     String rollDigits = s.rollNumber.replaceAll(RegExp(r'[^0-9]'), ''); 
                     if (rollDigits.isNotEmpty) {
                        int rollNum = int.parse(rollDigits);
-                       // Handle cases like 92000163001 vs just 1
-                       // If roll number > 1000, maybe check last 3 digits? 
-                       // For now, simple direct check
-                       if (rollNum >= start && rollNum <= end) {
+                       
+                       // Check exact match OR match last 3 digits (for long roll numbers)
+                       int shortRoll = rollNum > 1000 ? rollNum % 1000 : rollNum;
+
+                       if (targetRolls.contains(rollNum) || targetRolls.contains(shortRoll)) {
                          _tempSelectedIds.add(s.id!);
-                       } else {
-                         // Optional: Handle 3 digit matching for long enrollment numbers
-                         if (rollNum > 1000) {
-                           int last3 = rollNum % 1000;
-                           if (last3 >= start && last3 <= end) _tempSelectedIds.add(s.id!);
-                         }
                        }
                     }
                   }
@@ -192,7 +198,7 @@ class _ManageEnrollmentScreenState extends State<ManageEnrollmentScreen> {
               }
               Navigator.pop(ctx);
             },
-            child: const Text("Select"),
+            child: const Text("Apply Selection"),
           )
         ],
       ),
@@ -206,7 +212,7 @@ class _ManageEnrollmentScreenState extends State<ManageEnrollmentScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _saveChanges, 
         icon: const Icon(Icons.save),
-        label: const Text("Save to All Batches"),
+        label: const Text("Save Enrollment"),
       ),
       body: Column(
         children: [
@@ -216,64 +222,117 @@ class _ManageEnrollmentScreenState extends State<ManageEnrollmentScreen> {
             color: Colors.deepPurple.shade50,
             child: Column(
               children: [
-                // 1. Subject Name Dropdown (Unique List)
-                DropdownButtonFormField<String>(
-                  value: _selectedSubjectName,
-                  decoration: const InputDecoration(labelText: "Select Subject (All Batches)", filled: true, fillColor: Colors.white),
-                  items: _uniqueSubjects.map((name) => DropdownMenuItem(
-                    value: name,
-                    child: Text(name), // Shows "Java" only once
-                  )).toList(),
-                  onChanged: (val) {
-                    setState(() => _selectedSubjectName = val);
-                    _fetchStudentsAndEnrollment();
-                  },
+                // 1. Subject Name Dropdown (Fixed Deprecation Warning)
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: "Select Subject (All Batches)",
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _selectedSubjectName,
+                      isExpanded: true,
+                      items: _uniqueSubjects.map((name) => DropdownMenuItem(
+                        value: name,
+                        child: Text(name),
+                      )).toList(),
+                      onChanged: (val) {
+                        setState(() => _selectedSubjectName = val);
+                        _fetchStudentsAndEnrollment();
+                      },
+                    ),
+                  ),
                 ),
+                
                 const SizedBox(height: 10),
                 
-                // 2. Department Dropdown
-                DropdownButtonFormField<int>(
-                  value: _selectedDeptId,
-                  decoration: const InputDecoration(labelText: "Select Students From", filled: true, fillColor: Colors.white),
-                  items: _departments.map((d) => DropdownMenuItem(
-                    value: d.id,
-                    child: Text(d.name),
-                  )).toList(),
-                  onChanged: (val) {
-                    setState(() => _selectedDeptId = val);
-                    _fetchStudentsAndEnrollment();
-                  },
+                // 2. Department Dropdown (Fixed Deprecation Warning)
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: "Select Students From",
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: _selectedDeptId,
+                      isExpanded: true,
+                      items: _departments.map((d) => DropdownMenuItem(
+                        value: d.id,
+                        child: Text(d.name),
+                      )).toList(),
+                      onChanged: (val) {
+                        setState(() => _selectedDeptId = val);
+                        _fetchStudentsAndEnrollment();
+                      },
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-
-          // --- TOOLS ---
+            
+          // --- TOOLS & BULK ACTIONS (Combined) ---
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("${_students.length} Students", style: const TextStyle(fontWeight: FontWeight.bold)),
-                Row(
-                  children: [
-                    OutlinedButton(onPressed: _selectRangeDialog, child: const Text("Range")),
-                    const SizedBox(width: 8),
-                    TextButton(onPressed: () => setState(() => _tempSelectedIds.addAll(_students.map((s) => s.id!))), child: const Text("All")),
-                    TextButton(onPressed: () => setState(() => _tempSelectedIds.clear()), child: const Text("None")),
-                  ],
-                )
+                // 1. Student Count
+                Text(
+                  "${_students.length} Students",
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                
+                const Spacer(), // Pushes everything else to the right
+
+                // 2. Select by List Button
+                OutlinedButton.icon(
+                  onPressed: _selectByListDialog,
+                  icon: const Icon(Icons.list_alt, size: 16),
+                  label: const Text("Select By List"),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 36), // Compact height
+                  ),
+                ),
+                
+                const SizedBox(width: 8),
+
+                // 3. Select All (Compact Text Button)
+                TextButton(
+                  onPressed: () => setState(() =>
+                      _tempSelectedIds.addAll(_students.map((s) => s.id!))),
+                  style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 36)),
+                  child: const Text("All"),
+                ),
+
+                // 4. Clear All (Compact Text Button)
+                TextButton(
+                  onPressed: () => setState(() => _tempSelectedIds.clear()),
+                  style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 36)),
+                  child: const Text("Clear"),
+                ),
               ],
             ),
           ),
 
-          // --- LIST ---
+          // --- STUDENT LIST ---
           Expanded(
             child: _isLoading 
               ? const Center(child: CircularProgressIndicator())
               : _students.isEmpty 
                 ? const Center(child: Text("No students found"))
                 : ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 100),
                     itemCount: _students.length,
                     itemBuilder: (context, index) {
                       final student = _students[index];
