@@ -1,5 +1,5 @@
 class StudentReport {
-  final int id; // ✅ Added ID
+  final int id; 
   final String name;
   final String rollNo;
   final String department;
@@ -8,7 +8,7 @@ class StudentReport {
   final List<SubjectAttendance> subjectRecords;
 
   StudentReport({
-    required this.id, // ✅ Required in constructor
+    required this.id,
     required this.name,
     required this.rollNo,
     required this.department,
