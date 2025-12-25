@@ -202,9 +202,8 @@ class _SplashScreenState extends State<SplashScreen>
                 opacity: _opacity,
                 child: Center(
                   child: Text(
-                    "v3.0.0",
+                    "v4.0.0",
                     style: TextStyle(
-                      // ✅ Fixed: Used withValues instead of withOpacity
                       color: Colors.white.withValues(alpha: 0.5),
                       fontSize: 12,
                     ),

@@ -15,8 +15,8 @@ class AboutMeScreen extends StatelessWidget {
   // --- Project Info ---
   static const String _appName = "Attendance Manager";
   static const String _appDesc = 
-      "A smart mobile solution designed to eliminate paper-based attendance. "
-      "Track daily attendance, manage records, and generate instant analytics.";
+      "Your complete offline classroom assistant: Track attendance, visualize data, and share reports in seconds"
+      "—all built with Flutter and SQLite for seamless performance.";
   
   
   static const String _projectRepoUrl = "https://github.com/yashmakwana03/absent_message/";
@@ -151,7 +151,6 @@ class AboutMeScreen extends StatelessWidget {
                       const SizedBox(width: 16),
                       _SocialButton(icon: FontAwesomeIcons.instagram, color: const Color(0xFFE4405F), onTap: () => _launchUrl(_instagramUrl)),
                       const SizedBox(width: 16),
-                      // ✅ Phone Button
                       _SocialButton(icon: Icons.call, color: Colors.green, onTap: _launchPhone),
                       const SizedBox(width: 16),
                       _SocialButton(icon: Icons.email, color: const Color(0xFFDB4437), onTap: _launchEmail),
@@ -217,7 +216,6 @@ class AboutMeScreen extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white, width: 5),
-              // ✅ Fixed Deprecation
               boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 15, offset: const Offset(0, 8))],
             ),
             child: const CircleAvatar(
@@ -243,7 +241,6 @@ class AboutMeScreen extends StatelessWidget {
   Widget _buildProjectCard(Color color) {
     return Card(
       elevation: 4,
-      // ✅ Fixed Deprecation
       shadowColor: color.withValues(alpha: 0.3),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Column(
@@ -251,7 +248,6 @@ class AboutMeScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              // ✅ Fixed Deprecation
               color: color.withValues(alpha: 0.08),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             ),
@@ -274,7 +270,7 @@ class AboutMeScreen extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(color: Colors.green.shade100, borderRadius: BorderRadius.circular(4)),
-                            child: Text("v3.0.0 Stable", style: TextStyle(fontSize: 10, color: Colors.green.shade800, fontWeight: FontWeight.bold)),
+                            child: Text("v4.0.0 Stable", style: TextStyle(fontSize: 10, color: Colors.green.shade800, fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),
@@ -290,7 +286,6 @@ class AboutMeScreen extends StatelessWidget {
               children: [
                 Text(_appDesc, style: TextStyle(color: Colors.grey[700], height: 1.5)),
                 const SizedBox(height: 16),
-                // ✅ ADDED: View Source Code Button
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -323,7 +318,7 @@ class AboutMeScreen extends StatelessWidget {
           const Divider(height: 1, indent: 20, endIndent: 20),
           _buildTechTile(Icons.flutter_dash_rounded, "Flutter UI", "Built with a component-based architecture."),
           const Divider(height: 1, indent: 20, endIndent: 20),
-          _buildTechTile(Icons.share_rounded, "Smart Export", "Generates formatted WhatsApp & HTML reports."),
+          _buildTechTile(Icons.share_rounded, "  Export", "Generates formatted WhatsApp & HTML reports."),
         ],
       ),
     );
@@ -401,7 +396,6 @@ class _SocialButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           shape: BoxShape.circle,
-          // ✅ Fixed Deprecation
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 10, offset: const Offset(0, 4))],
         ),
         child: FaIcon(icon, color: color, size: 22),
