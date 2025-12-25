@@ -453,9 +453,13 @@ document.addEventListener('DOMContentLoaded', () => {
                   Expanded(
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
-                        backgroundColor: Colors.teal,
+                        backgroundColor: Colors.deepPurple, // ✅ Changed to Deep Purple
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12), // Matches your other cards
+                        ),
+                        elevation: 2, // Adds a subtle shadow for depth
                       ),
                       icon: const Icon(Icons.html, size: 18),
                       label: const Text("Share HTML"),
