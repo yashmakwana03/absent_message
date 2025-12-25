@@ -29,6 +29,11 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
     List<Map<String, dynamic>> history = [];
 
     for (var log in allLogs) {
+      // ✅ FIX: Check if the log belongs to the student's department
+      if (log['deptName'] != widget.student.department) {
+        continue; // Skip logs from other departments (e.g., IT logs for a CE student)
+      }
+
       String absentees = log['absentees'] ?? "";
       List<String> absList = absentees.split(',').map((e) => e.trim()).toList();
       
@@ -41,6 +46,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> with SingleTi
       }
     }
 
+    // Sort: Newest date first
     history.sort((a, b) => b['date'].compareTo(a['date']));
 
     if (mounted) {
