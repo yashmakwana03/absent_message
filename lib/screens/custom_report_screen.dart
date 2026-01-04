@@ -17,8 +17,8 @@ class CustomReportScreen extends StatefulWidget {
 class _CustomReportScreenState extends State<CustomReportScreen> {
   // Filters
   final List<DateTime> _selectedDates = [];
-  String _selectedSubject = 'All';
-  List<String> _subjects = ['All'];
+  List<String> _selectedSubjects = ['All']; // ✅ Changed to List
+  List<String> _allSubjects = ['All']; // List of available subjects
   
   // Data
   List<Map<String, dynamic>> _reportData = [];
@@ -34,7 +34,7 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
     final subs = await DatabaseHelper.instance.getAllSubjects();
     if (mounted) {
       setState(() {
-        _subjects = ['All', ...subs];
+        _allSubjects = ['All', ...subs];
       });
     }
   }
@@ -54,7 +54,76 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
     return grouped;
   }
 
-  // --- 2. DATE SELECTION ---
+  // --- 2. PICKERS (DATE & SUBJECT) ---
+
+  // ✅ NEW: Subject Picker Dialog
+  Future<void> _pickSubjects() async {
+    await showDialog(
+      context: context,
+      builder: (context) {
+        // Temp list for dialog state
+        List<String> tempSelected = List.from(_selectedSubjects);
+        
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text("Select Subjects"),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _allSubjects.map((subject) {
+                    final isChecked = tempSelected.contains(subject);
+                    return CheckboxListTile(
+                      title: Text(subject),
+                      value: isChecked,
+                      activeColor: Colors.deepPurple,
+                      onChanged: (val) {
+                        setStateDialog(() {
+                          if (subject == 'All') {
+                            // If 'All' is clicked, clear others and select 'All'
+                            if (val == true) {
+                              tempSelected = ['All'];
+                            } else {
+                              tempSelected.remove('All');
+                            }
+                          } else {
+                            // If specific subject clicked, remove 'All'
+                            tempSelected.remove('All');
+                            if (val == true) {
+                              tempSelected.add(subject);
+                            } else {
+                              tempSelected.remove(subject);
+                            }
+                          }
+                          // Safety: If nothing selected, default to All? Or allow empty?
+                          // Let's allow empty in dialog but check before save
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel"),
+                ),
+                TextButton(
+                  onPressed: () {
+                    if (tempSelected.isEmpty) tempSelected = ['All'];
+                    setState(() => _selectedSubjects = tempSelected);
+                    Navigator.pop(context);
+                  },
+                  child: const Text("OK"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _pickDate() async {
     final config = CalendarDatePicker2WithActionButtonsConfig(
       calendarType: CalendarDatePicker2Type.multi,
@@ -85,6 +154,13 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
     });
   }
 
+  void _removeSubject(String subject) {
+    setState(() {
+      _selectedSubjects.remove(subject);
+      if (_selectedSubjects.isEmpty) _selectedSubjects = ['All'];
+    });
+  }
+
   Future<void> _generateReport() async {
     if (_selectedDates.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please add at least one date")));
@@ -94,7 +170,9 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
     setState(() => _isLoading = true);
 
     List<String> formattedDates = _selectedDates.map((d) => DateFormat('yyyy-MM-dd').format(d)).toList();
-    final data = await DatabaseHelper.instance.getLogsForSpecificDates(formattedDates, _selectedSubject);
+    
+    // ✅ PASS LIST OF SUBJECTS
+    final data = await DatabaseHelper.instance.getLogsForSpecificDates(formattedDates, _selectedSubjects);
 
     if (mounted) {
       setState(() {
@@ -104,10 +182,11 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
     }
   }
 
-  // --- 3. WHATSAPP TEXT GENERATOR ---
+  // --- 3. EXPORT LOGIC ---
   String _generateTextReport() {
     StringBuffer buffer = StringBuffer();
-    buffer.writeln("*Attendance Report ($_selectedSubject)*");
+    String subjTitle = _selectedSubjects.join(', ');
+    buffer.writeln("*Attendance Report ($subjTitle)*");
 
     Map<String, Map<String, List<Map<String, dynamic>>>> grouped = _groupData();
 
@@ -120,14 +199,14 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
         for (var row in rows) {
            String dept = row['deptName'];
            String absentees = row['absentees'];
-           buffer.writeln("- $dept : ${absentees.isEmpty ? 'None' : absentees}");
+           String time = row['timeSlot'] ?? ""; // Added time
+           buffer.writeln("- $dept [$time] : ${absentees.isEmpty ? 'None' : absentees}");
         }
       });
     });
     return buffer.toString();
   }
 
-  // --- 4. HTML FILE GENERATOR ---
   String _generateHtmlReport() {
     Map<String, Map<String, List<Map<String, dynamic>>>> groupedBySubj = {};
     for (var row in _reportData) {
@@ -137,6 +216,12 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
       if (!groupedBySubj[subj]!.containsKey(date)) groupedBySubj[subj]![date] = [];
       groupedBySubj[subj]![date]!.add(row);
     }
+
+    String displaySubject = _selectedSubjects.contains('All') 
+        ? "All Subjects" 
+        : _selectedSubjects.length > 2 
+            ? "${_selectedSubjects.length} Subjects Selected" 
+            : _selectedSubjects.join(', ');
 
     StringBuffer html = StringBuffer();
     
@@ -161,7 +246,7 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
   <div class="text-center mb-10 p-6 bg-white rounded-2xl shadow-sm border border-slate-100">
     <h1 class="text-3xl font-bold text-slate-800 mb-2">Attendance Report</h1>
     <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-50 text-indigo-700 font-medium text-sm">
-      Subject: <span class="font-bold">$_selectedSubject</span>
+      <span class="font-bold">$displaySubject</span>
     </div>
   </div>
   <div class="flex flex-col gap-8">
@@ -202,16 +287,13 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
         for (var log in logs) {
            String absentees = log['absentees'];
            List<String> nums = absentees.split(',').where((e) => e.isNotEmpty).toList();
-           
-           // --- FIX 1: ADDED COMMENT TO CATCH BLOCK ---
-           try { 
-             nums.sort((a,b) => int.parse(a).compareTo(int.parse(b))); 
-           } catch(e) {
-             // Ignore sort error for non-numeric rolls
-           }
+           try { nums.sort((a,b) => int.parse(a).compareTo(int.parse(b))); } catch(e) {}
            
            String sortedAbsentees = nums.join(', ');
            String dept = log['deptName'];
+           // ✅ Added Time & Faculty to HTML
+           String time = log['timeSlot'] ?? "";
+           String faculty = log['faculty'] ?? "";
            
            bool hasAbsentees = nums.isNotEmpty;
            String statusColor = hasAbsentees ? "rose" : "emerald"; 
@@ -225,7 +307,7 @@ class _CustomReportScreenState extends State<CustomReportScreen> {
                 <div class="flex justify-between items-center mb-2">
                     <div class="flex items-center gap-2">
                         <span class="px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 text-xs font-bold uppercase tracking-wide">$dept</span>
-                        <span class="text-xs font-semibold text-$statusColor-600">$statusLabel</span>
+                        <span class="text-xs text-slate-400 font-medium">$time • $faculty</span>
                     </div>
                     <span class="text-xs font-bold text-$statusColor-700 bg-$statusColor-50 px-2 py-0.5 rounded-full">$badgeText</span>
                 </div>
@@ -278,26 +360,24 @@ document.addEventListener('DOMContentLoaded', () => {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Text Copied!")));
   }
 
-
   Future<void> _shareHtml() async {
     if (_reportData.isEmpty) return;
     try {
       final htmlContent = _generateHtmlReport();
       final directory = await getTemporaryDirectory();
-      String safeSubject = _selectedSubject.replaceAll(' ', '_');
+      String safeSubject = _selectedSubjects.contains('All') ? "All_Subjects" : "Multiple_Subjects";
       String fileName = "Attendance_${safeSubject}_${_selectedDates.length}Days.html";
       final file = File('${directory.path}/$fileName');
       await file.writeAsString(htmlContent);
       await Share.shareXFiles([XFile(file.path)], text: 'Attendance Report');
     } catch (e) {
-      // --- FIX 2: ADDED MOUNTED CHECK ---
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
       }
     }
   }
 
-  // --- 5. MAIN UI BUILD ---
+  // --- UI BUILD ---
   @override
   Widget build(BuildContext context) {
     final primaryColor = Colors.deepPurple;
@@ -317,20 +397,62 @@ document.addEventListener('DOMContentLoaded', () => {
             color: Colors.deepPurple.shade50,
             child: Column(
               children: [
-                DropdownButtonFormField<String>(
-                  initialValue: _selectedSubject, 
-                  decoration: const InputDecoration(
-                    labelText: "Select Subject",
-                    border: OutlineInputBorder(),
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                  ),
-                  items: _subjects.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-                  onChanged: (val) => setState(() => _selectedSubject = val!),
+                // ✅ NEW: Subject Selection Row
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("Subjects", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          Text(
+                            _selectedSubjects.contains('All') 
+                                ? "All Subjects" 
+                                : "${_selectedSubjects.length} Selected",
+                            style: TextStyle(fontWeight: FontWeight.bold, color: primaryColor, fontSize: 16),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: primaryColor,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: primaryColor)),
+                      ),
+                      icon: const Icon(Icons.class_, size: 18),
+                      label: const Text("Select"),
+                      onPressed: _pickSubjects, // ✅ Open Dialog
+                    )
+                  ],
                 ),
-                const SizedBox(height: 12),
                 
+                // Show chips for subjects if specific ones selected
+                if (!_selectedSubjects.contains('All'))
+                  Container(
+                    height: 40,
+                    margin: const EdgeInsets.only(top: 8, bottom: 8),
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: _selectedSubjects.map((subj) => Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Chip(
+                          label: Text(subj, style: const TextStyle(fontSize: 12, color: Colors.white)),
+                          backgroundColor: Colors.deepPurple.withValues(alpha: 0.8),
+                          deleteIconColor: Colors.white70,
+                          onDeleted: () => _removeSubject(subj),
+                          padding: EdgeInsets.zero,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          side: BorderSide.none,
+                        ),
+                      )).toList(),
+                    ),
+                  ),
+
+                const Divider(height: 24),
+
+                // ✅ EXISTING: Date Selection Row
                 Row(
                   children: [
                     Expanded(
@@ -372,8 +494,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             DateFormat('dd/MM').format(date),
                             style: const TextStyle(fontSize: 12, color: Colors.white),
                           ),
-                          // Use withValues instead of withOpacity
-                          backgroundColor: primaryColor.withValues(alpha: 0.8), 
+                          backgroundColor: primaryColor.withValues(alpha: 0.8),
                           deleteIconColor: Colors.white70,
                           onDeleted: () => _removeDate(date),
                           padding: const EdgeInsets.all(0),
@@ -418,7 +539,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          "Select dates & click Generate",
+                          "Select subjects & dates",
                           style: TextStyle(fontSize: 14, color: Colors.grey.shade400),
                         ),
                       ],
@@ -453,13 +574,13 @@ document.addEventListener('DOMContentLoaded', () => {
                   Expanded(
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
-                        backgroundColor: Colors.deepPurple, // ✅ Changed to Deep Purple
+                        backgroundColor: Colors.deepPurple, 
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12), // Matches your other cards
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        elevation: 2, // Adds a subtle shadow for depth
+                        elevation: 2, 
                       ),
                       icon: const Icon(Icons.html, size: 18),
                       label: const Text("Share HTML"),
@@ -474,7 +595,7 @@ document.addEventListener('DOMContentLoaded', () => {
     );
   }
 
-  // --- 6. PREVIEW LIST BUILDER ---
+  // --- PREVIEW BUILDER ---
   Widget _buildGroupedList() {
     Map<String, Map<String, List<Map<String, dynamic>>>> grouped = _groupData();
     List<String> sortedDates = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
@@ -553,6 +674,9 @@ document.addEventListener('DOMContentLoaded', () => {
                           ...rows.map((row) {
                             String dept = row['deptName'];
                             String absentees = row['absentees'];
+                            String time = row['timeSlot'] ?? ""; // ✅ Added Time to Preview
+                            String faculty = row['faculty'] ?? ""; // ✅ Added Faculty to Preview
+                            
                             bool hasAbsentees = absentees.trim().isNotEmpty;
 
                             return Padding(
@@ -560,20 +684,29 @@ document.addEventListener('DOMContentLoaded', () => {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade100,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      dept,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 11,
-                                        color: Colors.grey.shade800,
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade100,
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          dept,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 11,
+                                            color: Colors.grey.shade800,
+                                          ),
+                                        ),
                                       ),
-                                    ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        "$time • $faculty", 
+                                        style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                                      ),
+                                    ],
                                   ),
                                   const SizedBox(height: 4),
                                   Text(

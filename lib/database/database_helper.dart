@@ -318,25 +318,25 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getLogsForSpecificDates(
     List<String> dates,
-    String subject,
+    List<String> subjects, // Changed from String to List<String>
   ) async {
     final db = await database;
     String dateList = dates.map((d) => "'$d'").join(',');
 
-    String sql =
-        '''
-      SELECT log.date, log.absentees, lec.subject, dept.name as deptName 
+    String sql = '''
+      SELECT log.date, log.absentees, lec.subject, lec.timeSlot, lec.faculty, dept.name as deptName 
       FROM AttendanceLog log
       JOIN Lecture lec ON log.lectureId = lec.id
       JOIN Department dept ON log.deptId = dept.id
       WHERE log.date IN ($dateList)
     ''';
 
-    if (subject != 'All') {
-      sql += " AND lec.subject = '$subject'";
+    if (subjects.isNotEmpty && !subjects.contains('All')) {
+      String subjectList = subjects.map((s) => "'$s'").join(',');
+      sql += " AND lec.subject IN ($subjectList)";
     }
 
-    sql += " ORDER BY log.date ASC";
+    sql += " ORDER BY log.date ASC, lec.timeSlot ASC";
     return await db.rawQuery(sql);
   }
 
